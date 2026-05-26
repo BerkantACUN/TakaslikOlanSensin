@@ -1,14 +1,17 @@
 // CampusSwap — Akademik Kaynak Takas Sistemi
 // Document 1'deki ER diyagramının normalize edilmiş Prisma karşılığı.
+//
+// Provider: lokal dev için "sqlite", Vercel/Neon prod için "postgresql"
+// olarak değiştir. Şema enum yerine string + uygulama seviyesi kısıt
+// kullandığı için her iki provider'da da çalışır.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
 }
 
 // ------------------------------------------------------------------
@@ -27,7 +30,7 @@ model Department {
 }
 
 // ------------------------------------------------------------------
-// USER (skills çoklu değerli özellik — ayrı tabloda)
+// USER
 // ------------------------------------------------------------------
 model User {
   id           String   @id @default(cuid())
@@ -65,24 +68,15 @@ model UserSkill {
 }
 
 // ------------------------------------------------------------------
-// RESOURCE — paylaşılan materyal (kitap, PDF, notlar...)
+// RESOURCE
+// type: BOOK | PDF | NOTES | SLIDES | EXAM | PROJECT | OTHER
 // ------------------------------------------------------------------
-enum ResourceType {
-  BOOK
-  PDF
-  NOTES
-  SLIDES
-  EXAM
-  PROJECT
-  OTHER
-}
-
 model Resource {
-  id          String       @id @default(cuid())
+  id          String   @id @default(cuid())
   title       String
-  type        ResourceType
+  type        String
   description String?
-  createdAt   DateTime     @default(now())
+  createdAt   DateTime @default(now())
 
   departmentId String?
   department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
@@ -94,22 +88,16 @@ model Resource {
 }
 
 // ------------------------------------------------------------------
-// POST — kullanıcının takas ilanı (offer ↔ request)
+// POST
+// status: ACTIVE | RESERVED | COMPLETED | CANCELLED
 // ------------------------------------------------------------------
-enum PostStatus {
-  ACTIVE
-  RESERVED
-  COMPLETED
-  CANCELLED
-}
-
 model Post {
-  id          String     @id @default(cuid())
+  id          String   @id @default(cuid())
   title       String
   description String?
-  status      PostStatus @default(ACTIVE)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   ownerId String
   owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -129,21 +117,14 @@ model Post {
 }
 
 // ------------------------------------------------------------------
-// EXCHANGE — bir post için takas talebi
+// EXCHANGE
+// status: PENDING | ACCEPTED | REJECTED | COMPLETED | CANCELLED
 // ------------------------------------------------------------------
-enum ExchangeStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-  COMPLETED
-  CANCELLED
-}
-
 model Exchange {
-  id                String         @id @default(cuid())
-  status            ExchangeStatus @default(PENDING)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  id        String   @id @default(cuid())
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   postId      String
   post        Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -160,7 +141,7 @@ model Exchange {
 }
 
 // ------------------------------------------------------------------
-// EXCHANGE_MESSAGE — zayıf varlık (Exchange'e bağımlı)
+// EXCHANGE_MESSAGE — zayıf varlık
 // ------------------------------------------------------------------
 model ExchangeMessage {
   exchangeId String
@@ -178,7 +159,7 @@ model ExchangeMessage {
 }
 
 // ------------------------------------------------------------------
-// REVIEW — tamamlanan exchange sonrası karşılıklı değerlendirme
+// REVIEW
 // ------------------------------------------------------------------
 model Review {
   id        String   @id @default(cuid())
@@ -201,12 +182,12 @@ model Review {
 }
 
 // ------------------------------------------------------------------
-// FAVORITE — N:M (User <-> Post)
+// FAVORITE — N:M
 // ------------------------------------------------------------------
 model Favorite {
-  userId    String
-  postId    String
-  addedAt   DateTime @default(now())
+  userId  String
+  postId  String
+  addedAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
@@ -216,34 +197,21 @@ model Favorite {
 }
 
 // ------------------------------------------------------------------
-// REPORT — uygunsuz davranış veya post raporu
+// REPORT
+// reason: SPAM | INAPPROPRIATE | FRAUD | HARASSMENT | OTHER
+// status: OPEN | REVIEWING | RESOLVED | DISMISSED
 // ------------------------------------------------------------------
-enum ReportReason {
-  SPAM
-  INAPPROPRIATE
-  FRAUD
-  HARASSMENT
-  OTHER
-}
-
-enum ReportStatus {
-  OPEN
-  REVIEWING
-  RESOLVED
-  DISMISSED
-}
-
 model Report {
-  id            String       @id @default(cuid())
-  reason        ReportReason
-  details       String?
-  status        ReportStatus @default(OPEN)
-  createdAt     DateTime     @default(now())
-  targetType    String
-  targetId      String
+  id         String   @id @default(cuid())
+  reason     String
+  details    String?
+  status     String   @default("OPEN")
+  createdAt  DateTime @default(now())
+  targetType String
+  targetId   String
 
-  reporterId    String
-  reporter      User   @relation("ReportsSent", fields: [reporterId], references: [id], onDelete: Cascade)
+  reporterId String
+  reporter   User   @relation("ReportsSent", fields: [reporterId], references: [id], onDelete: Cascade)
 
   reportedUserId String?
   reportedUser   User?   @relation("ReportsAbout", fields: [reportedUserId], references: [id], onDelete: SetNull)

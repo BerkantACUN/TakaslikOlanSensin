@@ -27,7 +27,7 @@ Next.js + PostgreSQL + Prisma ile uçtan uca uygular.
 | Frontend | Next.js 15 (App Router) + React 19 |
 | Stil | Tailwind CSS v4 (`@theme`) + custom design tokens |
 | Backend | Next.js API routes (Edge/Node) |
-| Veritabanı | PostgreSQL + Prisma ORM |
+| Veritabanı | SQLite (dev) · PostgreSQL (prod) + Prisma ORM |
 | Auth | bcrypt + jose (JWT) + httpOnly cookies |
 | Validation | Zod |
 | Deploy | Vercel + Neon / Vercel Postgres |
@@ -46,8 +46,11 @@ Next.js + PostgreSQL + Prisma ile uçtan uca uygular.
    cp .env.example .env
    ```
 
-   Sonra `DATABASE_URL`, `DIRECT_URL` ve `JWT_SECRET` doldur.
-   `openssl rand -base64 32` ile güvenli bir secret üret.
+   Default değerler lokal SQLite için hazır. Sadece `JWT_SECRET` üret:
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
+   ```
 
 3. **Veritabanını oluştur**
 
@@ -77,9 +80,17 @@ Next.js + PostgreSQL + Prisma ile uçtan uca uygular.
 1. Bu repoyu GitHub'a push'la (zaten yapıldı:
    `https://github.com/BerkantACUN/TakaslikOlanSensin`).
 
-2. Vercel'de **New Project** → bu repoyu içe aktar.
+2. **Veritabanı provider'ını değiştir.** `prisma/schema.prisma`:
 
-3. **Storage** sekmesinden veritabanı oluştur:
+   ```diff
+   - provider = "sqlite"
+   + provider = "postgresql"
+   + directUrl = env("DIRECT_URL")
+   ```
+
+3. Vercel'de **New Project** → bu repoyu içe aktar.
+
+4. **Storage** sekmesinden veritabanı oluştur:
    - Önerilen: **Neon Postgres** (ücretsiz tier yeterli)
    - Alternatif: **Vercel Postgres**
 

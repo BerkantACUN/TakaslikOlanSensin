@@ -35,8 +35,8 @@ export async function GET(req: Request) {
   const where: any = { status: "ACTIVE" };
   if (q) {
     where.OR = [
-      { title: { contains: q, mode: "insensitive" } },
-      { description: { contains: q, mode: "insensitive" } },
+      { title: { contains: q } },
+      { description: { contains: q } },
     ];
   }
   if (type) where.offer = { type };

@@ -36,10 +36,10 @@ export default async function PostsPage({
 
   if (sp.q) {
     where.OR = [
-      { title: { contains: sp.q, mode: "insensitive" } },
-      { description: { contains: sp.q, mode: "insensitive" } },
-      { offer: { title: { contains: sp.q, mode: "insensitive" } } },
-      { request: { title: { contains: sp.q, mode: "insensitive" } } },
+      { title: { contains: sp.q } },
+      { description: { contains: sp.q } },
+      { offer: { title: { contains: sp.q } } },
+      { request: { title: { contains: sp.q } } },
     ];
   }
 

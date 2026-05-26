@@ -1,4 +1,4 @@
-import { PrismaClient, ResourceType, PostStatus } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -80,7 +80,7 @@ async function main() {
   const resA = await prisma.resource.create({
     data: {
       title: "Stewart Calculus 8. Baskı",
-      type: ResourceType.BOOK,
+      type: "BOOK",
       description: "Hemen hemen sıfır, çok az altı çizilmiş.",
       departmentId: cs.id,
     },
@@ -88,7 +88,7 @@ async function main() {
   const resB = await prisma.resource.create({
     data: {
       title: "Linear Algebra Ders Notları (PDF)",
-      type: ResourceType.NOTES,
+      type: "NOTES",
       description: "Hafta hafta el yazısı, taranmış net PDF.",
       departmentId: cs.id,
     },
@@ -96,7 +96,7 @@ async function main() {
   const resC = await prisma.resource.create({
     data: {
       title: "Signals & Systems — Oppenheim",
-      type: ResourceType.BOOK,
+      type: "BOOK",
       description: "2. el, hafif yıpranmış ama tertemiz.",
       departmentId: ee.id,
     },
@@ -104,7 +104,7 @@ async function main() {
   const resD = await prisma.resource.create({
     data: {
       title: "Algoritma Vize Çıkmış Sorular",
-      type: ResourceType.EXAM,
+      type: "EXAM",
       description: "Son 5 yılın çözümlü vize soruları.",
       departmentId: cs.id,
     },
@@ -130,7 +130,6 @@ async function main() {
       ownerId: berkant.id,
       offerId: resB.id,
       requestId: resC.id,
-      status: PostStatus.ACTIVE,
     },
   });
 
