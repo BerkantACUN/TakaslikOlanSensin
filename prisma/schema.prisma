@@ -1,0 +1,253 @@
+// CampusSwap — Akademik Kaynak Takas Sistemi
+// Document 1'deki ER diyagramının normalize edilmiş Prisma karşılığı.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ------------------------------------------------------------------
+// DEPARTMENT
+// ------------------------------------------------------------------
+model Department {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  faculty   String
+  createdAt DateTime   @default(now())
+
+  users     User[]
+  resources Resource[]
+
+  @@map("departments")
+}
+
+// ------------------------------------------------------------------
+// USER (skills çoklu değerli özellik — ayrı tabloda)
+// ------------------------------------------------------------------
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String   @unique
+  passwordHash String
+  avatarName   String?
+  bio          String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  skills        UserSkill[]
+  posts         Post[]
+  exchanges     Exchange[]        @relation("RequesterExchanges")
+  favorites     Favorite[]
+  messagesSent  ExchangeMessage[]
+  reviewsGiven  Review[]          @relation("ReviewsGiven")
+  reviewsGot    Review[]          @relation("ReviewsGot")
+  reportsSent   Report[]          @relation("ReportsSent")
+  reportsAbout  Report[]          @relation("ReportsAbout")
+
+  @@map("users")
+}
+
+model UserSkill {
+  userId String
+  skill  String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, skill])
+  @@map("user_skills")
+}
+
+// ------------------------------------------------------------------
+// RESOURCE — paylaşılan materyal (kitap, PDF, notlar...)
+// ------------------------------------------------------------------
+enum ResourceType {
+  BOOK
+  PDF
+  NOTES
+  SLIDES
+  EXAM
+  PROJECT
+  OTHER
+}
+
+model Resource {
+  id          String       @id @default(cuid())
+  title       String
+  type        ResourceType
+  description String?
+  createdAt   DateTime     @default(now())
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  offerInPosts   Post[] @relation("PostOffer")
+  requestInPosts Post[] @relation("PostRequest")
+
+  @@map("resources")
+}
+
+// ------------------------------------------------------------------
+// POST — kullanıcının takas ilanı (offer ↔ request)
+// ------------------------------------------------------------------
+enum PostStatus {
+  ACTIVE
+  RESERVED
+  COMPLETED
+  CANCELLED
+}
+
+model Post {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  status      PostStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  offerId String
+  offer   Resource @relation("PostOffer", fields: [offerId], references: [id])
+
+  requestId String
+  request   Resource @relation("PostRequest", fields: [requestId], references: [id])
+
+  exchanges Exchange[]
+  favorites Favorite[]
+
+  @@index([ownerId])
+  @@index([status])
+  @@map("posts")
+}
+
+// ------------------------------------------------------------------
+// EXCHANGE — bir post için takas talebi
+// ------------------------------------------------------------------
+enum ExchangeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+model Exchange {
+  id                String         @id @default(cuid())
+  status            ExchangeStatus @default(PENDING)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  postId      String
+  post        Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  requesterId String
+  requester   User   @relation("RequesterExchanges", fields: [requesterId], references: [id], onDelete: Cascade)
+
+  messages ExchangeMessage[]
+  reviews  Review[]
+
+  @@unique([postId, requesterId])
+  @@index([requesterId])
+  @@map("exchanges")
+}
+
+// ------------------------------------------------------------------
+// EXCHANGE_MESSAGE — zayıf varlık (Exchange'e bağımlı)
+// ------------------------------------------------------------------
+model ExchangeMessage {
+  exchangeId String
+  messageNo  Int
+  senderId   String
+  content    String
+  createdAt  DateTime @default(now())
+
+  exchange Exchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+  sender   User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@id([exchangeId, messageNo])
+  @@index([exchangeId])
+  @@map("exchange_messages")
+}
+
+// ------------------------------------------------------------------
+// REVIEW — tamamlanan exchange sonrası karşılıklı değerlendirme
+// ------------------------------------------------------------------
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  exchangeId String
+  exchange   Exchange @relation(fields: [exchangeId], references: [id], onDelete: Cascade)
+
+  reviewerId String
+  reviewer   User   @relation("ReviewsGiven", fields: [reviewerId], references: [id], onDelete: Cascade)
+
+  revieweeId String
+  reviewee   User   @relation("ReviewsGot", fields: [revieweeId], references: [id], onDelete: Cascade)
+
+  @@unique([exchangeId, reviewerId])
+  @@index([revieweeId])
+  @@map("reviews")
+}
+
+// ------------------------------------------------------------------
+// FAVORITE — N:M (User <-> Post)
+// ------------------------------------------------------------------
+model Favorite {
+  userId    String
+  postId    String
+  addedAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@id([userId, postId])
+  @@map("favorites")
+}
+
+// ------------------------------------------------------------------
+// REPORT — uygunsuz davranış veya post raporu
+// ------------------------------------------------------------------
+enum ReportReason {
+  SPAM
+  INAPPROPRIATE
+  FRAUD
+  HARASSMENT
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+model Report {
+  id            String       @id @default(cuid())
+  reason        ReportReason
+  details       String?
+  status        ReportStatus @default(OPEN)
+  createdAt     DateTime     @default(now())
+  targetType    String
+  targetId      String
+
+  reporterId    String
+  reporter      User   @relation("ReportsSent", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  reportedUserId String?
+  reportedUser   User?   @relation("ReportsAbout", fields: [reportedUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("reports")
+}
