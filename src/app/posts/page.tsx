@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
-import { PostCard, type PostCardData } from "@/components/posts/PostCard";
+import { FeedPost, type FeedPostData } from "@/components/posts/FeedPost";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -71,7 +71,7 @@ export default async function PostsPage({
     prisma.department.findMany({ orderBy: { name: "asc" } }),
   ]);
 
-  const cards: PostCardData[] = posts.map((p: any) => ({
+  const feed: FeedPostData[] = posts.map((p: any) => ({
     id: p.id,
     title: p.title,
     description: p.description,
@@ -101,22 +101,20 @@ export default async function PostsPage({
   };
 
   return (
-    <div className="page-container py-8 md:py-10">
-      {/* Başlık */}
-      <div className="flex items-end justify-between mb-6 gap-4">
+    <div className="page-container py-6 md:py-8 max-w-[640px]">
+      <div className="flex items-end justify-between mb-5">
         <div>
-          <h1 className="text-[32px] md:text-[36px] font-bold tracking-tight">
+          <h1 className="text-[28px] md:text-[32px] font-bold tracking-tight">
             İlanlar
           </h1>
-          <p className="text-[14px] text-[var(--color-slate)] mt-1">
-            {cards.length} aktif takas ilanı
+          <p className="text-[13px] text-[var(--color-slate)] mt-1">
+            {feed.length} aktif takas
             {sp.q && (
               <>
                 {" · "}
                 <span className="font-semibold text-[var(--color-carbon)]">
                   "{sp.q}"
-                </span>{" "}
-                için sonuçlar
+                </span>
               </>
             )}
           </p>
@@ -125,15 +123,15 @@ export default async function PostsPage({
           <Link href="/posts/new">
             <Button>
               <Icon.Plus size={16} />
-              Yeni ilan
+              <span className="hidden sm:inline">Yeni ilan</span>
             </Button>
           </Link>
         )}
       </div>
 
-      {/* Filtreler */}
-      <div className="bg-white border border-[var(--color-mist)] rounded-[20px] p-4 mb-8">
-        <div className="flex flex-wrap gap-2">
+      {/* Filtre çubuğu (sticky) */}
+      <div className="sticky top-16 z-10 -mx-2 px-2 pb-3 bg-[var(--surface-canvas)]/95 backdrop-blur">
+        <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1">
           <FilterPill href={buildHref({ type: undefined })} active={!sp.type}>
             Hepsi
           </FilterPill>
@@ -147,52 +145,28 @@ export default async function PostsPage({
             </FilterPill>
           ))}
         </div>
-
         {departments.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[var(--color-mist)]">
+          <div className="flex gap-2 overflow-x-auto scrollbar-thin pt-2">
             <FilterPill
               href={buildHref({ department: undefined })}
               active={!sp.department}
-              variant="dept"
             >
               Tüm bölümler
             </FilterPill>
-            {departments.slice(0, 8).map((d) => (
+            {departments.slice(0, 10).map((d) => (
               <FilterPill
                 key={d.id}
                 href={buildHref({ department: d.id })}
                 active={sp.department === d.id}
-                variant="dept"
               >
-                {d.name}
+                {d.name.split(" ").slice(0, 2).join(" ")}
               </FilterPill>
             ))}
           </div>
         )}
-
-        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-[var(--color-mist)] items-center">
-          <span className="text-[12px] font-semibold text-[var(--color-slate)] mr-1">
-            Sırala:
-          </span>
-          <FilterPill
-            href={buildHref({ sort: undefined })}
-            active={!sp.sort || sp.sort === "new"}
-            variant="sort"
-          >
-            En yeni
-          </FilterPill>
-          <FilterPill
-            href={buildHref({ sort: "popular" })}
-            active={sp.sort === "popular"}
-            variant="sort"
-          >
-            En popüler
-          </FilterPill>
-        </div>
       </div>
 
-      {/* Sonuçlar */}
-      {cards.length === 0 ? (
+      {feed.length === 0 ? (
         <EmptyState
           icon={<Icon.Search />}
           title="Sonuç yok"
@@ -204,9 +178,9 @@ export default async function PostsPage({
           }
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {cards.map((p) => (
-            <PostCard key={p.id} post={p} />
+        <div className="space-y-5 mt-2" data-edu="feed">
+          {feed.map((p) => (
+            <FeedPost key={p.id} post={p} />
           ))}
         </div>
       )}
@@ -218,21 +192,19 @@ function FilterPill({
   href,
   active,
   children,
-  variant = "type",
 }: {
   href: string;
   active: boolean;
   children: React.ReactNode;
-  variant?: "type" | "dept" | "sort";
 }) {
   return (
     <Link
       href={href}
       className={
-        "inline-flex items-center h-9 px-3 rounded-[10px] text-[13px] font-semibold border transition " +
+        "inline-flex items-center h-9 px-3.5 rounded-full text-[12.5px] font-semibold shrink-0 transition " +
         (active
-          ? "bg-[var(--color-carbon)] text-white border-[var(--color-carbon)]"
-          : "bg-white text-[var(--color-carbon)] border-[var(--color-pebble)] hover:border-[var(--color-carbon)]")
+          ? "bg-[var(--color-carbon)] text-white"
+          : "bg-white text-[var(--color-carbon)] border border-[var(--color-pebble)] hover:border-[var(--color-carbon)]")
       }
     >
       {children}

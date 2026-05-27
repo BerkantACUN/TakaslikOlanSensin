@@ -54,8 +54,47 @@ model User {
   reviewsGot    Review[]          @relation("ReviewsGot")
   reportsSent   Report[]          @relation("ReportsSent")
   reportsAbout  Report[]          @relation("ReportsAbout")
+  convosA       Conversation[]    @relation("ConvoUserA")
+  convosB       Conversation[]    @relation("ConvoUserB")
+  dmsSent       DirectMessage[]   @relation("DMSender")
 
   @@map("users")
+}
+
+// ------------------------------------------------------------------
+// CONVERSATION + DIRECT MESSAGE
+// Profilden direkt mesajlaşma — Exchange'e bağlı değil.
+// userAId < userBId garantisi unique kanonik konuşma anahtarı sağlar.
+// ------------------------------------------------------------------
+model Conversation {
+  id            String   @id @default(cuid())
+  userAId       String
+  userBId       String
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
+
+  userA    User            @relation("ConvoUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB    User            @relation("ConvoUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages DirectMessage[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+  @@map("conversations")
+}
+
+model DirectMessage {
+  id             String   @id @default(cuid())
+  conversationId String
+  senderId       String
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("DMSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@map("direct_messages")
 }
 
 model UserSkill {

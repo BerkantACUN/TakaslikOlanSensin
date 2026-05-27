@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
+import { useEducation } from "@/components/educational/EducationalProvider";
 import {
   resourceTypeLabel,
   postStatusLabel,
@@ -35,6 +36,7 @@ export function PostCard({ post }: { post: PostCardData }) {
   const [fav, setFav] = useState(!!post.favoritedByMe);
   const [busy, setBusy] = useState(false);
   const { push } = useToast();
+  const { trigger } = useEducation();
 
   async function toggleFav(e: React.MouseEvent) {
     e.preventDefault();
@@ -49,7 +51,9 @@ export function PostCard({ post }: { post: PostCardData }) {
         method: fav ? "DELETE" : "POST",
       });
       if (!res.ok) throw new Error();
+      const wasFav = fav;
       setFav((f) => !f);
+      trigger(wasFav ? "unfavorite" : "favorite", { postId: post.id });
     } catch {
       push({ title: "İşlem başarısız", tone: "error" });
     } finally {
@@ -63,6 +67,7 @@ export function PostCard({ post }: { post: PostCardData }) {
   return (
     <Link
       href={`/posts/${post.id}`}
+      data-edu="post-card"
       className="group block bg-white rounded-[20px] border border-[var(--color-mist)] overflow-hidden transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)]"
     >
       {/* Görsel başlık alanı — abstract gradient şerit */}

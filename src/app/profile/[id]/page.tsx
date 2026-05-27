@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/Icon";
 import { PostCard, type PostCardData } from "@/components/posts/PostCard";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, timeAgo } from "@/lib/utils";
+import { ProfileActions } from "./ProfileActions";
 
 export const dynamic = "force-dynamic";
 
@@ -121,6 +122,15 @@ export default async function ProfilePage({
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="ml-auto">
+            <ProfileActions
+              userId={user.id}
+              username={user.username}
+              authed={!!me}
+              isMine={me?.id === user.id}
+            />
           </div>
         </div>
       </div>

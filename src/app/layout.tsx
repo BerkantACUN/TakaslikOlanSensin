@@ -3,6 +3,8 @@ import "./globals.css";
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { ToastProvider } from "@/components/ui/Toast";
+import { EducationalProvider } from "@/components/educational/EducationalProvider";
+import { AppShell } from "@/components/layout/AppShell";
 import { getCurrentUser } from "@/lib/auth";
 
 export const metadata: Metadata = {
@@ -35,20 +37,24 @@ export default async function RootLayout({
       </head>
       <body>
         <ToastProvider>
-          <Header
-            me={
-              me
-                ? {
-                    id: me.id,
-                    username: me.username,
-                    email: me.email,
-                    avatarName: me.avatarName,
-                  }
-                : null
-            }
-          />
-          <main className="min-h-[calc(100vh-4rem)]">{children}</main>
-          <Footer />
+          <EducationalProvider>
+            <Header
+              me={
+                me
+                  ? {
+                      id: me.id,
+                      username: me.username,
+                      email: me.email,
+                      avatarName: me.avatarName,
+                    }
+                  : null
+              }
+            />
+            <main className="min-h-[calc(100vh-4rem)]">
+              <AppShell>{children}</AppShell>
+            </main>
+            <Footer />
+          </EducationalProvider>
         </ToastProvider>
       </body>
     </html>

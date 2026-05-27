@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
+import { useEducation } from "@/components/educational/EducationalProvider";
 import { exchangeStatusLabel } from "@/lib/utils";
 
 export function PostActions({
@@ -26,6 +27,7 @@ export function PostActions({
 }) {
   const router = useRouter();
   const { push } = useToast();
+  const { trigger } = useEducation();
   const [fav, setFav] = useState(favorited);
   const [busy, setBusy] = useState(false);
 
@@ -71,6 +73,7 @@ export function PostActions({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Hata");
       push({ title: "Takas isteği gönderildi", tone: "success" });
+      trigger("exchange-request", { postId });
       router.refresh();
     } catch (e) {
       push({
@@ -90,7 +93,9 @@ export function PostActions({
         method: fav ? "DELETE" : "POST",
       });
       if (!res.ok) throw new Error();
+      const wasFav = fav;
       setFav((f) => !f);
+      trigger(wasFav ? "unfavorite" : "favorite", { postId });
     } catch {
       push({ title: "İşlem başarısız", tone: "error" });
     } finally {
