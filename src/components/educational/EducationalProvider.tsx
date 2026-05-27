@@ -11,13 +11,13 @@ import {
 import { SQL_CATALOG, type SqlScenario } from "./sqlCatalog";
 import { EducationalOverlay } from "./EducationalOverlay";
 
-type EducationCtx = {
+interface EducationCtx {
   /** Bir aksiyondan eğitim sahnesini elle aç */
   trigger: (key: string, ctx?: Record<string, unknown>) => void;
   /** Eğitim modu açık mı? */
   enabled: boolean;
   setEnabled: (b: boolean) => void;
-};
+}
 
 const Ctx = createContext<EducationCtx>({
   trigger: () => {},
@@ -25,61 +25,79 @@ const Ctx = createContext<EducationCtx>({
   setEnabled: () => {},
 });
 
-const FOUR_CLICK_WINDOW_MS = 700;
+/** 4 click'in tamamının içine sığması gereken pencere (ms). */
+const FOUR_CLICK_WINDOW_MS = 800;
+const REQUIRED_CLICKS = 4;
 
 export function EducationalProvider({ children }: { children: React.ReactNode }) {
   const [enabled, setEnabled] = useState(false);
   const [scene, setScene] = useState<SqlScenario | null>(null);
   const [anchor, setAnchor] = useState<DOMRect | null>(null);
   const clickTimes = useRef<number[]>([]);
-  const clickedEl = useRef<HTMLElement | null>(null);
 
-  /** 4-click detector — global */
+  // Closure'lar eski state görmesin diye ref'ler
+  const enabledRef = useRef(enabled);
   useEffect(() => {
-    function onPointerDown(e: PointerEvent) {
+    enabledRef.current = enabled;
+  }, [enabled]);
+
+  const sceneRef = useRef<SqlScenario | null>(null);
+  useEffect(() => {
+    sceneRef.current = scene;
+  }, [scene]);
+
+  /**
+   * Click detection — capture phase'de yakalanır ki Link/button navigate
+   * gerçekleşmeden önce 4. click'i durdurabilelim. Tek tık her zaman
+   * normal davranışı çalıştırır (yönlendirme/aksiyon); ancak 4 tık
+   * FOUR_CLICK_WINDOW_MS içinde gelirse 4. click iptal edilir ve
+   * eğitim overlay'i açılır.
+   */
+  useEffect(() => {
+    function onClickCapture(e: MouseEvent) {
+      if (sceneRef.current) return;
+
+      const targetEl = e.target as HTMLElement | null;
+      if (targetEl?.closest("[data-edu-ui]")) return;
+
       const now = performance.now();
-      const t = clickTimes.current;
-      t.push(now);
-      // Pencere dışı tıkları at
-      while (t.length && now - t[0] > FOUR_CLICK_WINDOW_MS * (t.length || 1)) {
-        if (now - t[0] > FOUR_CLICK_WINDOW_MS) t.shift();
-        else break;
-      }
-      // Hızlı 4 kez aynı bölgeye
-      if (t.length >= 4 && t[t.length - 1] - t[t.length - 4] <= FOUR_CLICK_WINDOW_MS * 3) {
-        clickedEl.current = e.target as HTMLElement;
-        clickTimes.current = [];
-        openFromElement(clickedEl.current);
+      const filtered = clickTimes.current.filter(
+        (t) => now - t <= FOUR_CLICK_WINDOW_MS,
+      );
+      filtered.push(now);
+      clickTimes.current = filtered;
+
+      if (filtered.length >= REQUIRED_CLICKS) {
         e.preventDefault();
         e.stopPropagation();
+        clickTimes.current = [];
+        openFromElement(targetEl);
       }
     }
-    document.addEventListener("pointerdown", onPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("click", onClickCapture, true);
+    return () => document.removeEventListener("click", onClickCapture, true);
   }, []);
 
   /** ESC ile kapat */
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape" && scene) {
+      if (e.key === "Escape" && sceneRef.current) {
         setScene(null);
         setAnchor(null);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [scene]);
+  }, []);
 
-  function openFromElement(el: HTMLElement | null) {
+  function openFromElement(el: HTMLElement | null): void {
     if (!el) return;
-    // En yakın data-edu attribute'unu bul
     const target = el.closest<HTMLElement>("[data-edu]");
     const key = target?.dataset.edu;
     let scenario: SqlScenario | undefined;
     if (key && SQL_CATALOG[key]) {
       scenario = SQL_CATALOG[key];
     } else {
-      // Fallback: post kartı bağlamı vs.
       const card = el.closest<HTMLElement>("a[href^='/posts/']");
       if (card) scenario = SQL_CATALOG["post-open"];
       else scenario = SQL_CATALOG.feed;
@@ -90,25 +108,21 @@ export function EducationalProvider({ children }: { children: React.ReactNode })
     setEnabled(true);
   }
 
-  const trigger = useCallback((key: string, _ctx?: Record<string, unknown>) => {
-    const scenario = SQL_CATALOG[key];
-    if (!scenario) return;
-    // Sadece eğitim modu açıkken otomatik göster — yoksa sessiz
-    if (!enabledRef.current) return;
-    const target = document.querySelector<HTMLElement>(
-      scenario.target ? `[data-edu='${scenario.target}']` : "",
-    );
-    setScene(scenario);
-    setAnchor((target ?? document.body).getBoundingClientRect());
-  }, []);
+  const trigger = useCallback(
+    (key: string, _ctx?: Record<string, unknown>): void => {
+      const scenario = SQL_CATALOG[key];
+      if (!scenario) return;
+      if (!enabledRef.current) return;
+      const target = scenario.target
+        ? document.querySelector<HTMLElement>(`[data-edu='${scenario.target}']`)
+        : null;
+      setScene(scenario);
+      setAnchor((target ?? document.body).getBoundingClientRect());
+    },
+    [],
+  );
 
-  /** enabled için referans — trigger closure'ı eski state görmesin */
-  const enabledRef = useRef(enabled);
-  useEffect(() => {
-    enabledRef.current = enabled;
-  }, [enabled]);
-
-  function close() {
+  function close(): void {
     setScene(null);
     setAnchor(null);
   }
@@ -117,15 +131,11 @@ export function EducationalProvider({ children }: { children: React.ReactNode })
     <Ctx.Provider value={{ trigger, enabled, setEnabled }}>
       {children}
       {scene && (
-        <EducationalOverlay
-          scenario={scene}
-          anchor={anchor}
-          onClose={close}
-        />
+        <EducationalOverlay scenario={scene} anchor={anchor} onClose={close} />
       )}
 
-      {/* Yardım rozeti — kullanıcı bilsin diye sağ alt köşede */}
       <button
+        data-edu-ui="badge"
         onClick={() => setEnabled((s) => !s)}
         title={enabled ? "Eğitim modu açık" : "Eğitim modunu aç"}
         className={
@@ -139,8 +149,11 @@ export function EducationalProvider({ children }: { children: React.ReactNode })
       </button>
 
       {enabled && (
-        <div className="fixed bottom-5 left-20 z-[60] text-[11px] font-semibold text-[var(--color-brand-700)] bg-[var(--color-brand-50)] border border-[var(--color-brand-100)] px-3 py-1.5 rounded-full pointer-events-none animate-fade-up">
-          Eğitim modu • bir karta 4 kere hızlı tıkla
+        <div
+          data-edu-ui="hint"
+          className="fixed bottom-5 left-20 z-[60] text-[11px] font-semibold text-[var(--color-brand-700)] bg-[var(--color-brand-50)] border border-[var(--color-brand-100)] px-3 py-1.5 rounded-full pointer-events-none animate-fade-up"
+        >
+          Bir karta 4 kere hızlı tıkla
         </div>
       )}
     </Ctx.Provider>
