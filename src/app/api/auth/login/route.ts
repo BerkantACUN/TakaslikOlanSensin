@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { users } from "@/lib/repo";
 import { setAuthCookie, signToken, verifyPassword } from "@/lib/auth";
 
 const schema = z.object({
@@ -16,11 +16,7 @@ export async function POST(req: Request) {
   }
 
   const { emailOrUsername, password } = parsed.data;
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [{ email: emailOrUsername }, { username: emailOrUsername }],
-    },
-  });
+  const user = await users.findByEmailOrUsername(emailOrUsername);
 
   if (!user || !(await verifyPassword(password, user.passwordHash))) {
     return NextResponse.json(

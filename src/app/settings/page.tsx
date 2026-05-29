@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { departments } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 import { SettingsForm } from "./SettingsForm";
 
@@ -9,9 +9,7 @@ export default async function SettingsPage() {
   const me = await getCurrentUser();
   if (!me) redirect("/login?next=/settings");
 
-  const departments = await prisma.department.findMany({
-    orderBy: { name: "asc" },
-  });
+  const depts = await departments.list();
 
   return (
     <div className="page-container py-8 md:py-10 max-w-2xl">
@@ -27,9 +25,9 @@ export default async function SettingsPage() {
           avatarName: me.avatarName ?? "",
           bio: me.bio ?? "",
           departmentId: me.departmentId ?? "",
-          skills: me.skills.map((s) => s.skill),
+          skills: me.skills,
         }}
-        departments={departments}
+        departments={depts}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { departments, posts } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 import { FeedPost, type FeedPostData } from "@/components/posts/FeedPost";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -32,60 +32,32 @@ export default async function PostsPage({
   const sp = await searchParams;
   const me = await getCurrentUser();
 
-  const where: any = { status: "ACTIVE" };
-
-  if (sp.q) {
-    where.OR = [
-      { title: { contains: sp.q } },
-      { description: { contains: sp.q } },
-      { offer: { title: { contains: sp.q } } },
-      { request: { title: { contains: sp.q } } },
-    ];
-  }
-
-  if (sp.department) {
-    where.owner = { departmentId: sp.department };
-  }
-
-  if (sp.type && TYPES.includes(sp.type as any)) {
-    where.offer = { type: sp.type };
-  }
-
-  const orderBy =
-    sp.sort === "popular"
-      ? { exchanges: { _count: "desc" as const } }
-      : { createdAt: "desc" as const };
-
-  const [posts, departments] = await Promise.all([
-    prisma.post.findMany({
-      where,
-      orderBy,
-      take: 60,
-      include: {
-        owner: { include: { department: { select: { name: true } } } },
-        offer: { select: { title: true, type: true } },
-        request: { select: { title: true, type: true } },
-        favorites: me?.id ? { where: { userId: me.id } } : false,
-      },
+  const [feed, depts] = await Promise.all([
+    posts.list(me ? { id: me.id } : null, {
+      q: sp.q,
+      type: sp.type,
+      departmentId: sp.department,
+      sort: (sp.sort as "new" | "popular") ?? "new",
+      limit: 60,
     }),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
+    departments.list(),
   ]);
 
-  const feed: FeedPostData[] = posts.map((p: any) => ({
+  const cards: FeedPostData[] = feed.map((p) => ({
     id: p.id,
     title: p.title,
     description: p.description,
     status: p.status,
-    createdAt: p.createdAt,
+    createdAt: p.createdAt as any,
     owner: {
       id: p.owner.id,
       username: p.owner.username,
       avatarName: p.owner.avatarName,
-      department: p.owner.department,
+      department: p.owner.department ?? null,
     },
-    offer: p.offer,
-    request: p.request,
-    favoritedByMe: Array.isArray(p.favorites) && p.favorites.length > 0,
+    offer: { title: p.offer.title, type: p.offer.type },
+    request: { title: p.request.title, type: p.request.type },
+    favoritedByMe: p.favoritedByMe,
     isMine: me?.id === p.ownerId,
     authed: !!me,
   }));
@@ -108,7 +80,7 @@ export default async function PostsPage({
             İlanlar
           </h1>
           <p className="text-[13px] text-[var(--color-slate)] mt-1">
-            {feed.length} aktif takas
+            {cards.length} aktif takas
             {sp.q && (
               <>
                 {" · "}
@@ -129,7 +101,6 @@ export default async function PostsPage({
         )}
       </div>
 
-      {/* Filtre çubuğu (sticky) */}
       <div className="sticky top-16 z-10 -mx-2 px-2 pb-3 bg-[var(--surface-canvas)]/95 backdrop-blur">
         <div className="flex gap-2 overflow-x-auto scrollbar-thin pb-1">
           <FilterPill href={buildHref({ type: undefined })} active={!sp.type}>
@@ -145,7 +116,7 @@ export default async function PostsPage({
             </FilterPill>
           ))}
         </div>
-        {departments.length > 0 && (
+        {depts.length > 0 && (
           <div className="flex gap-2 overflow-x-auto scrollbar-thin pt-2">
             <FilterPill
               href={buildHref({ department: undefined })}
@@ -153,7 +124,7 @@ export default async function PostsPage({
             >
               Tüm bölümler
             </FilterPill>
-            {departments.slice(0, 10).map((d) => (
+            {depts.slice(0, 10).map((d) => (
               <FilterPill
                 key={d.id}
                 href={buildHref({ department: d.id })}
@@ -166,7 +137,7 @@ export default async function PostsPage({
         )}
       </div>
 
-      {feed.length === 0 ? (
+      {cards.length === 0 ? (
         <EmptyState
           icon={<Icon.Search />}
           title="Sonuç yok"
@@ -179,7 +150,7 @@ export default async function PostsPage({
         />
       ) : (
         <div className="space-y-5 mt-2" data-edu="feed">
-          {feed.map((p) => (
+          {cards.map((p) => (
             <FeedPost key={p.id} post={p} />
           ))}
         </div>

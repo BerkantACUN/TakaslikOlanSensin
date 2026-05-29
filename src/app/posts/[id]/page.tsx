@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { exchanges, posts, users } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import {
   resourceTypeLabel,
@@ -23,40 +22,20 @@ export default async function PostDetailPage({
   const { id } = await params;
   const me = await getCurrentUser();
 
-  const post = await prisma.post.findUnique({
-    where: { id },
-    include: {
-      owner: {
-        include: {
-          department: true,
-          skills: true,
-          reviewsGot: { select: { rating: true } },
-        },
-      },
-      offer: { include: { department: true } },
-      request: { include: { department: true } },
-      favorites: me?.id ? { where: { userId: me.id } } : undefined,
-      exchanges: me?.id
-        ? { where: { requesterId: me.id }, select: { id: true, status: true } }
-        : undefined,
-    },
-  });
-
+  const post = await posts.findById(id, me ? { id: me.id } : null);
   if (!post) return notFound();
 
-  const isMine = me?.id === post.ownerId;
-  const favorited =
-    Array.isArray(post.favorites) && post.favorites.length > 0;
-  const myExchange =
-    Array.isArray(post.exchanges) && post.exchanges.length > 0
-      ? post.exchanges[0]
-      : null;
+  const [ownerDetailed, myExchange] = await Promise.all([
+    users.findDetailed(post.ownerId),
+    me ? exchanges.findForRequester(id, me.id) : null,
+  ]);
+  const rating = ownerDetailed
+    ? await users.averageRating(ownerDetailed.id)
+    : { avg: null as number | null, count: 0 };
 
-  const ratings = post.owner.reviewsGot.map((r: any) => r.rating);
-  const avgRating =
-    ratings.length > 0
-      ? (ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length).toFixed(1)
-      : null;
+  const isMine = me?.id === post.ownerId;
+  const favorited = !!post.favoritedByMe;
+  const avgRating = rating.avg != null ? rating.avg.toFixed(1) : null;
 
   return (
     <div className="page-container py-8 md:py-10">
@@ -64,15 +43,12 @@ export default async function PostDetailPage({
         href="/posts"
         className="inline-flex items-center gap-2 text-[13px] font-semibold text-[var(--color-slate)] hover:text-[var(--color-carbon)] mb-6"
       >
-        <Icon.ArrowLeft size={14} />
-        Tüm ilanlar
+        <Icon.ArrowLeft size={14} /> Tüm ilanlar
       </Link>
 
       <div className="grid lg:grid-cols-3 gap-8">
-        {/* Sol — detay */}
         <div className="lg:col-span-2">
           <div className="bg-white border border-[var(--color-mist)] rounded-[24px] overflow-hidden">
-            {/* Görsel başlık */}
             <div className="relative h-56 md:h-72 bg-gradient-to-br from-[var(--color-brand-100)] via-[var(--color-brand-50)] to-white">
               <div className="absolute inset-0 opacity-50 [background:radial-gradient(circle_at_30%_30%,rgba(47,111,255,0.2),transparent_50%),radial-gradient(circle_at_70%_70%,rgba(245,158,11,0.15),transparent_50%)]" />
               <div className="absolute top-4 left-4 flex flex-wrap gap-2">
@@ -108,7 +84,6 @@ export default async function PostDetailPage({
                   title={post.offer.title}
                   type={post.offer.type}
                   desc={post.offer.description}
-                  dept={post.offer.department?.name}
                   tone="brand"
                 />
                 <ResourceBlock
@@ -116,7 +91,6 @@ export default async function PostDetailPage({
                   title={post.request.title}
                   type={post.request.type}
                   desc={post.request.description}
-                  dept={post.request.department?.name}
                   tone="amber"
                 />
               </div>
@@ -124,55 +98,55 @@ export default async function PostDetailPage({
           </div>
         </div>
 
-        {/* Sağ — owner card + actions */}
         <aside className="space-y-4">
           <div className="bg-white border border-[var(--color-mist)] rounded-[20px] p-5 sticky top-20">
             <div className="flex items-center gap-3">
               <Avatar
-                name={post.owner.avatarName ?? post.owner.username}
+                name={ownerDetailed?.avatarName ?? ownerDetailed?.username}
                 size={56}
               />
               <div className="min-w-0">
                 <p className="font-semibold text-[16px] truncate">
-                  {post.owner.avatarName ?? post.owner.username}
+                  {ownerDetailed?.avatarName ?? ownerDetailed?.username}
                 </p>
                 <p className="text-[12px] text-[var(--color-slate)] truncate">
-                  @{post.owner.username}
+                  @{ownerDetailed?.username}
                 </p>
               </div>
             </div>
 
-            {post.owner.department && (
+            {ownerDetailed?.department && (
               <div className="mt-4 pt-4 border-t border-[var(--color-mist)] text-[13px]">
                 <p className="text-[var(--color-slate)] mb-1">Bölüm</p>
-                <p className="font-semibold">
-                  {post.owner.department.name}
-                </p>
+                <p className="font-semibold">{ownerDetailed.department.name}</p>
                 <p className="text-[12px] text-[var(--color-slate)]">
-                  {post.owner.department.faculty}
+                  {ownerDetailed.department.faculty}
                 </p>
               </div>
             )}
 
             {avgRating && (
               <div className="mt-4 pt-4 border-t border-[var(--color-mist)] flex items-center gap-2">
-                <Icon.StarFilled className="text-[var(--color-accent-amber)]" size={16} />
+                <Icon.StarFilled
+                  className="text-[var(--color-accent-amber)]"
+                  size={16}
+                />
                 <span className="font-semibold text-[14px]">{avgRating}</span>
                 <span className="text-[12px] text-[var(--color-slate)]">
-                  ({ratings.length} değerlendirme)
+                  ({rating.count} değerlendirme)
                 </span>
               </div>
             )}
 
-            {post.owner.skills.length > 0 && (
+            {ownerDetailed && ownerDetailed.skills.length > 0 && (
               <div className="mt-4 pt-4 border-t border-[var(--color-mist)]">
                 <p className="text-[12px] text-[var(--color-slate)] mb-2">
                   Yetkinlikler
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {post.owner.skills.map((s: any) => (
-                    <Badge key={s.skill} tone="soft">
-                      {s.skill}
+                  {ownerDetailed.skills.map((s) => (
+                    <Badge key={s} tone="soft">
+                      {s}
                     </Badge>
                   ))}
                 </div>
@@ -191,12 +165,14 @@ export default async function PostDetailPage({
               />
             </div>
 
-            <Link
-              href={`/profile/${post.owner.id}`}
-              className="block mt-3 text-center text-[12px] font-semibold text-[var(--color-slate)] hover:text-[var(--color-carbon)]"
-            >
-              Profili görüntüle
-            </Link>
+            {ownerDetailed && (
+              <Link
+                href={`/profile/${ownerDetailed.id}`}
+                className="block mt-3 text-center text-[12px] font-semibold text-[var(--color-slate)] hover:text-[var(--color-carbon)]"
+              >
+                Profili görüntüle
+              </Link>
+            )}
           </div>
         </aside>
       </div>
@@ -209,14 +185,12 @@ function ResourceBlock({
   title,
   type,
   desc,
-  dept,
   tone,
 }: {
   label: string;
   title: string;
   type: string;
   desc: string | null;
-  dept?: string;
   tone: "brand" | "amber";
 }) {
   const wrap =
@@ -240,7 +214,6 @@ function ResourceBlock({
           <p className="font-semibold text-[15px]">{title}</p>
           <p className="text-[12px] text-[var(--color-slate)]">
             {resourceTypeLabel(type)}
-            {dept ? ` · ${dept}` : ""}
           </p>
           {desc && (
             <p className="mt-2 text-[13px] text-[var(--color-carbon)] leading-snug">

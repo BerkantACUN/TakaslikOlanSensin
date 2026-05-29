@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { departments } from "@/lib/repo";
 import { requireUser } from "@/lib/auth";
 import { Icon } from "@/components/ui/Icon";
 import { NewPostForm } from "./NewPostForm";
@@ -8,9 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function NewPostPage() {
   await requireUser();
-  const departments = await prisma.department.findMany({
-    orderBy: { name: "asc" },
-  });
+  const depts = await departments.list();
 
   return (
     <div className="page-container py-8 md:py-10 max-w-3xl">
@@ -30,7 +28,7 @@ export default async function NewPostPage() {
         ilanlar daha hızlı eşleşir.
       </p>
 
-      <NewPostForm departments={departments} />
+      <NewPostForm departments={depts} />
     </div>
   );
 }

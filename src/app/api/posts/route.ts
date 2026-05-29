@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { posts } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 
 const RESOURCE_TYPES = [
@@ -28,32 +28,14 @@ const createSchema = z.object({
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const q = url.searchParams.get("q");
-  const type = url.searchParams.get("type");
-  const department = url.searchParams.get("department");
-
-  const where: any = { status: "ACTIVE" };
-  if (q) {
-    where.OR = [
-      { title: { contains: q } },
-      { description: { contains: q } },
-    ];
-  }
-  if (type) where.offer = { type };
-  if (department) where.owner = { departmentId: department };
-
-  const posts = await prisma.post.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take: 60,
-    include: {
-      owner: { select: { id: true, username: true, avatarName: true } },
-      offer: { select: { title: true, type: true } },
-      request: { select: { title: true, type: true } },
-    },
+  const me = await getCurrentUser();
+  const list = await posts.list(me ? { id: me.id } : null, {
+    q: url.searchParams.get("q") ?? undefined,
+    type: url.searchParams.get("type") ?? undefined,
+    departmentId: url.searchParams.get("department") ?? undefined,
+    sort: (url.searchParams.get("sort") as "new" | "popular") ?? undefined,
   });
-
-  return NextResponse.json({ posts });
+  return NextResponse.json({ posts: list });
 }
 
 export async function POST(req: Request) {
@@ -72,33 +54,22 @@ export async function POST(req: Request) {
   }
 
   const d = parsed.data;
-
-  const post = await prisma.$transaction(async (tx) => {
-    const offer = await tx.resource.create({
-      data: {
-        title: d.offerTitle,
-        type: d.offerType,
-        description: d.offerDescription || null,
-        departmentId: d.offerDepartmentId || null,
-      },
-    });
-    const request = await tx.resource.create({
-      data: {
-        title: d.requestTitle,
-        type: d.requestType,
-        description: d.requestDescription || null,
-        departmentId: d.requestDepartmentId || null,
-      },
-    });
-    return tx.post.create({
-      data: {
-        title: d.title,
-        description: d.description || null,
-        ownerId: me.id,
-        offerId: offer.id,
-        requestId: request.id,
-      },
-    });
+  const post = await posts.create({
+    ownerId: me.id,
+    title: d.title,
+    description: d.description || null,
+    offer: {
+      title: d.offerTitle,
+      type: d.offerType,
+      description: d.offerDescription || null,
+      departmentId: d.offerDepartmentId || null,
+    },
+    request: {
+      title: d.requestTitle,
+      type: d.requestType,
+      description: d.requestDescription || null,
+      departmentId: d.requestDepartmentId || null,
+    },
   });
 
   return NextResponse.json({ post });

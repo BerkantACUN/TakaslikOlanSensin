@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { departments } from "@/lib/repo";
 import { Icon } from "@/components/ui/Icon";
 import { RegisterForm } from "./RegisterForm";
 
+export const dynamic = "force-dynamic";
+
 export default async function RegisterPage() {
-  const departments = await prisma.department.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, faculty: true },
-  });
+  const depts = await departments.list();
 
   return (
     <div className="min-h-[calc(100vh-4rem)] grid lg:grid-cols-2">
@@ -28,7 +27,7 @@ export default async function RegisterPage() {
             Üniversite öğrencileri için akademik kaynak takası — ücretsiz, hızlı.
           </p>
 
-          <RegisterForm departments={departments} />
+          <RegisterForm departments={depts} />
 
           <div className="mt-6 text-center text-[13px] text-[var(--color-slate)]">
             Zaten bir hesabın var mı?{" "}

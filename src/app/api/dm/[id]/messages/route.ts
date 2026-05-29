@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { dm } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 
 const schema = z.object({ content: z.string().min(1).max(2000) });
 
 async function authorize(conversationId: string, meId: string) {
-  const c = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    select: { id: true, userAId: true, userBId: true },
-  });
+  const c = await dm.findById(conversationId);
   if (!c) return null;
   if (c.userAId !== meId && c.userBId !== meId) return null;
   return c;
@@ -26,11 +23,7 @@ export async function GET(
   const convo = await authorize(id, me.id);
   if (!convo) return NextResponse.json({ error: "Bulunamadı" }, { status: 404 });
 
-  const messages = await prisma.directMessage.findMany({
-    where: { conversationId: id },
-    orderBy: { createdAt: "asc" },
-  });
-
+  const messages = await dm.listMessages(id);
   return NextResponse.json({ messages });
 }
 
@@ -51,19 +44,6 @@ export async function POST(
   const convo = await authorize(id, me.id);
   if (!convo) return NextResponse.json({ error: "Bulunamadı" }, { status: 404 });
 
-  const [message] = await prisma.$transaction([
-    prisma.directMessage.create({
-      data: {
-        conversationId: id,
-        senderId: me.id,
-        content: parsed.data.content,
-      },
-    }),
-    prisma.conversation.update({
-      where: { id },
-      data: { lastMessageAt: new Date() },
-    }),
-  ]);
-
+  const message = await dm.addMessage(id, me.id, parsed.data.content);
   return NextResponse.json({ message });
 }

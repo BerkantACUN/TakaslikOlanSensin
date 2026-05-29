@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { favorites } from "@/lib/repo";
 import { requireUser } from "@/lib/auth";
-import { PostCard, type PostCardData } from "@/components/posts/PostCard";
+import { FeedPost, type FeedPostData } from "@/components/posts/FeedPost";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -10,46 +10,33 @@ export const dynamic = "force-dynamic";
 
 export default async function FavoritesPage() {
   const me = await requireUser();
+  const favs = await favorites.listForUser(me.id);
 
-  const favs = await prisma.favorite.findMany({
-    where: { userId: me.id },
-    orderBy: { addedAt: "desc" },
-    include: {
-      post: {
-        include: {
-          owner: { include: { department: { select: { name: true } } } },
-          offer: { select: { title: true, type: true } },
-          request: { select: { title: true, type: true } },
-        },
-      },
-    },
-  });
-
-  const cards: PostCardData[] = favs.map((f: any) => ({
-    id: f.post.id,
-    title: f.post.title,
-    description: f.post.description,
-    status: f.post.status,
-    createdAt: f.post.createdAt,
+  const cards: FeedPostData[] = favs.map((p) => ({
+    id: p.id,
+    title: p.title,
+    description: p.description,
+    status: p.status,
+    createdAt: p.createdAt as any,
     owner: {
-      id: f.post.owner.id,
-      username: f.post.owner.username,
-      avatarName: f.post.owner.avatarName,
-      department: f.post.owner.department,
+      id: p.owner.id,
+      username: p.owner.username,
+      avatarName: p.owner.avatarName,
+      department: p.owner.department ?? null,
     },
-    offer: f.post.offer,
-    request: f.post.request,
+    offer: { title: p.offer.title, type: p.offer.type },
+    request: { title: p.request.title, type: p.request.type },
     favoritedByMe: true,
-    isMine: f.post.ownerId === me.id,
+    isMine: p.ownerId === me.id,
     authed: true,
   }));
 
   return (
-    <div className="page-container py-8 md:py-10">
-      <h1 className="text-[32px] md:text-[36px] font-bold tracking-tight">
+    <div className="page-container py-6 md:py-8 max-w-[640px]">
+      <h1 className="text-[28px] md:text-[32px] font-bold tracking-tight">
         Favorilerim
       </h1>
-      <p className="text-[14px] text-[var(--color-slate)] mt-1 mb-6">
+      <p className="text-[13px] text-[var(--color-slate)] mt-1 mb-6">
         Daha sonra göz atmak için kaydettiğin ilanlar.
       </p>
 
@@ -67,9 +54,9 @@ export default async function FavoritesPage() {
           }
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="space-y-5">
           {cards.map((p) => (
-            <PostCard key={p.id} post={p} />
+            <FeedPost key={p.id} post={p} />
           ))}
         </div>
       )}

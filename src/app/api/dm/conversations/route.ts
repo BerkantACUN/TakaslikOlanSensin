@@ -1,40 +1,29 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { dm, users } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
-import { getOrCreateConversation } from "@/lib/dm";
 
 export async function GET() {
   const me = await getCurrentUser();
   if (!me) return NextResponse.json({ error: "Giriş gerekli" }, { status: 401 });
 
-  const convos = await prisma.conversation.findMany({
-    where: { OR: [{ userAId: me.id }, { userBId: me.id }] },
-    orderBy: { lastMessageAt: "desc" },
-    include: {
-      userA: { select: { id: true, username: true, avatarName: true } },
-      userB: { select: { id: true, username: true, avatarName: true } },
-      messages: { orderBy: { createdAt: "desc" }, take: 1 },
-    },
-  });
-
-  const result = convos.map((c) => {
-    const other = c.userAId === me.id ? c.userB : c.userA;
+  const rows = await dm.listForUser(me.id);
+  const conversations = rows.map((c: any) => {
+    const isA = c.USER_A_ID === me.id;
     return {
-      id: c.id,
-      other,
-      lastMessageAt: c.lastMessageAt,
-      lastMessage: c.messages[0]
-        ? {
-            content: c.messages[0].content,
-            senderId: c.messages[0].senderId,
-            createdAt: c.messages[0].createdAt,
-          }
+      id: c.ID,
+      other: {
+        id: isA ? c.USER_B_ID : c.USER_A_ID,
+        username: isA ? c.B_USERNAME : c.A_USERNAME,
+        avatarName: isA ? c.B_AVATAR : c.A_AVATAR,
+      },
+      lastMessageAt: c.LAST_MESSAGE_AT,
+      lastMessage: c.LAST_CONTENT
+        ? { content: c.LAST_CONTENT, senderId: c.LAST_SENDER }
         : null,
     };
   });
-
-  return NextResponse.json({ conversations: result });
+  return NextResponse.json({ conversations });
 }
 
 const schema = z.object({ otherUserId: z.string().min(1) });
@@ -48,7 +37,6 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Geçersiz veri" }, { status: 400 });
   }
-
   const otherId = parsed.data.otherUserId;
   if (otherId === me.id) {
     return NextResponse.json(
@@ -56,12 +44,10 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   }
-
-  const other = await prisma.user.findUnique({ where: { id: otherId } });
+  const other = await users.findById(otherId);
   if (!other) {
     return NextResponse.json({ error: "Kullanıcı bulunamadı" }, { status: 404 });
   }
-
-  const convo = await getOrCreateConversation(me.id, otherId);
+  const convo = await dm.getOrCreate(me.id, otherId);
   return NextResponse.json({ conversation: { id: convo.id } });
 }

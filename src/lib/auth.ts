@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
-import { prisma } from "./db";
+import { users } from "./repo";
 
 const COOKIE_NAME = "campusswap_token";
 const TOKEN_TTL = 60 * 60 * 24 * 7; // 7 gün
@@ -16,15 +16,21 @@ function getSecret() {
   return new TextEncoder().encode(secret);
 }
 
-export async function hashPassword(plain: string) {
+export async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, 10);
 }
 
-export async function verifyPassword(plain: string, hash: string) {
+export async function verifyPassword(
+  plain: string,
+  hash: string,
+): Promise<boolean> {
   return bcrypt.compare(plain, hash);
 }
 
-export async function signToken(payload: { sub: string; username: string }) {
+export async function signToken(payload: {
+  sub: string;
+  username: string;
+}): Promise<string> {
   return new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -32,7 +38,9 @@ export async function signToken(payload: { sub: string; username: string }) {
     .sign(getSecret());
 }
 
-export async function verifyToken(token: string) {
+export async function verifyToken(
+  token: string,
+): Promise<{ sub: string; username: string } | null> {
   try {
     const { payload } = await jwtVerify(token, getSecret());
     return payload as { sub: string; username: string };
@@ -41,7 +49,7 @@ export async function verifyToken(token: string) {
   }
 }
 
-export async function setAuthCookie(token: string) {
+export async function setAuthCookie(token: string): Promise<void> {
   const store = await cookies();
   store.set(COOKIE_NAME, token, {
     httpOnly: true,
@@ -52,7 +60,7 @@ export async function setAuthCookie(token: string) {
   });
 }
 
-export async function clearAuthCookie() {
+export async function clearAuthCookie(): Promise<void> {
   const store = await cookies();
   store.delete(COOKIE_NAME);
 }
@@ -61,33 +69,17 @@ export async function getCurrentUser() {
   const store = await cookies();
   const token = store.get(COOKIE_NAME)?.value;
   if (!token) return null;
-
   const payload = await verifyToken(token);
   if (!payload?.sub) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { id: payload.sub },
-    select: {
-      id: true,
-      username: true,
-      email: true,
-      avatarName: true,
-      bio: true,
-      departmentId: true,
-      department: { select: { id: true, name: true, faculty: true } },
-      skills: { select: { skill: true } },
-    },
-  });
-
-  return user;
+  return users.findDetailed(payload.sub);
 }
 
 export async function requireUser() {
-  const user = await getCurrentUser();
-  if (!user) {
+  const me = await getCurrentUser();
+  if (!me) {
     throw new Response("Yetkisiz", { status: 401 });
   }
-  return user;
+  return me;
 }
 
 export const COOKIE = COOKIE_NAME;

@@ -6,7 +6,7 @@
 
 Bu proje Grup 13'ün **Veritabanı Yönetim Sistemleri** dersi
 projesidir. ER diyagramında modellenen CampusSwap sistemini
-Next.js + PostgreSQL + Prisma ile uçtan uca uygular.
+Next.js + **Oracle Database 23ai** + raw SQL ile uçtan uca uygular.
 
 ## Özellikler
 
@@ -16,50 +16,66 @@ Next.js + PostgreSQL + Prisma ile uçtan uca uygular.
 - **Filtreleme** — bölüme, kaynak türüne, anahtar kelimeye göre
 - **Favoriler** — N:M ilişki, sonra göz atmak için kaydet
 - **Takas akışı** — teklif → kabul/red → tamamlandı → değerlendir
-- **Mesajlaşma** — takas başına özel sohbet (zayıf varlık)
+- **Direkt mesajlaşma** — profil üzerinden DM + takas başına özel sohbet
 - **Değerlendirme** — 1-5 yıldız + yorum, profilde ortalama
 - **Raporlama** — uygunsuz ilan/kullanıcıyı raporla
+- **SQL Öğretici Mod** — herhangi bir karta 4 kez tıkla; o aksiyonun
+  arkasındaki gerçek Oracle SQL sorgusunu adım adım göster
 
 ## Teknoloji
 
 | Katman | Teknoloji |
 |--------|-----------|
 | Frontend | Next.js 15 (App Router) + React 19 |
-| Stil | Tailwind CSS v4 (`@theme`) + custom design tokens |
-| Backend | Next.js API routes (Edge/Node) |
-| Veritabanı | SQLite (dev) · PostgreSQL (prod) + Prisma ORM |
+| Stil | Tailwind CSS v3 + custom design tokens |
+| Animasyon | Framer Motion (sayfa geçişleri, loading) |
+| Backend | Next.js API routes (Node runtime) |
+| Veritabanı | **Oracle Database 23ai** (Docker) |
+| DB sürücü | `node-oracledb` (Thin mode — Instant Client gerekmez) |
+| Veri erişim | Raw SQL repository katmanı (`src/lib/repo.ts`) |
 | Auth | bcrypt + jose (JWT) + httpOnly cookies |
 | Validation | Zod |
-| Deploy | Vercel + Neon / Vercel Postgres |
 
 ## Hızlı başlangıç (lokal)
+
+> Gereksinim: **Docker Desktop** + **Node 20+**
 
 1. **Bağımlılıkları yükle**
 
    ```bash
-   npm install
+   npm install --legacy-peer-deps
    ```
 
-2. **`.env` dosyasını oluştur**
+2. **Oracle container'ı başlat**
+
+   ```bash
+   npm run db:up
+   ```
+
+   İlk çalıştırmada `gvenzl/oracle-free:23-slim-faststart` image'ı çekilir
+   (~1.2 GB). Container `localhost:1521/FREEPDB1` üzerinde `campus / campus123`
+   kullanıcısıyla erişilebilir hale gelir. "DATABASE IS READY TO USE" log'unu
+   bekle (ilk açılış ~30-60 sn).
+
+3. **`.env` dosyasını oluştur**
 
    ```bash
    cp .env.example .env
    ```
 
-   Default değerler lokal SQLite için hazır. Sadece `JWT_SECRET` üret:
+   Default Oracle değerleri hazır. Sadece `JWT_SECRET` üret:
 
    ```bash
    node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"
    ```
 
-3. **Veritabanını oluştur**
+4. **Şemayı ve demo veriyi yükle**
 
    ```bash
-   npm run db:push        # şemayı veritabanına gönder
-   npm run db:seed        # demo veri yükle
+   npm run db:setup      # db:reset (schema.sql) + db:seed
    ```
 
-4. **Dev sunucusunu başlat**
+5. **Dev sunucusunu başlat**
 
    ```bash
    npm run dev
@@ -75,106 +91,97 @@ Next.js + PostgreSQL + Prisma ile uçtan uca uygular.
 | berkant@example.com | test1234 |
 | ugur@example.com | test1234 |
 
-## Vercel deploy adımları
+## Komutlar
 
-1. Bu repoyu GitHub'a push'la (zaten yapıldı:
-   `https://github.com/BerkantACUN/TakaslikOlanSensin`).
+```bash
+npm run dev          # Next.js dev sunucu
+npm run build        # production build
+npm run start        # production sunucu
 
-2. **Veritabanı provider'ını değiştir.** `prisma/schema.prisma`:
+npm run db:up        # Oracle container'ı başlat (yoksa oluştur)
+npm run db:down      # container'ı durdur
+npm run db:reset     # schema.sql'i uygula (tüm tabloları yeniden kur)
+npm run db:seed      # demo veri yükle (Node + bcrypt)
+npm run db:setup     # reset + seed
+npm run db:cli       # container içinde sqlplus aç
+```
 
-   ```diff
-   - provider = "sqlite"
-   + provider = "postgresql"
-   + directUrl = env("DIRECT_URL")
-   ```
+## Veritabanı
 
-3. Vercel'de **New Project** → bu repoyu içe aktar.
+### Bağlantı katmanı (`src/lib/db.ts`)
+- `node-oracledb` Thin mode connection pool (`poolMin`/`poolMax` env'den)
+- `query` / `queryOne` / `execute` / `tx` yardımcıları
+- Manuel transaction için `tx()` — `commit`/`rollback` otomatik
 
-4. **Storage** sekmesinden veritabanı oluştur:
-   - Önerilen: **Neon Postgres** (ücretsiz tier yeterli)
-   - Alternatif: **Vercel Postgres**
+### Şema (`db/schema.sql`)
+ER diyagramının 3NF'e normalize edilmiş Oracle DDL'i — 12 tablo:
 
-4. Veritabanı bağlandığında Vercel otomatik olarak şu env'leri ekler:
-   - `DATABASE_URL`
-   - `DIRECT_URL` (Prisma migrate için)
+- **departments** (`id, name, faculty`)
+- **users** (`id, username, email, password_hash, avatar_name, bio, department_id`)
+- **user_skills** (`user_id, skill`) — çoklu değerli özellik
+- **resources** (`id, title, type, description, department_id`)
+- **posts** (`id, title, status, owner_id, offer_id, request_id`)
+- **exchanges** (`id, post_id, requester_id, status`) — UNIQUE(post_id, requester_id)
+- **exchange_messages** (`exchange_id, message_no, sender_id, content`) — zayıf varlık
+- **reviews** (`id, exchange_id, reviewer_id, reviewee_id, rating, comment_text`)
+- **favorites** (`user_id, post_id, added_at`) — N:M
+- **reports** (`id, reporter_id, reported_user_id, target_type, target_id, reason, status`)
+- **conversations** (`id, user_a_id, user_b_id, last_message_at`) — kanonik çift
+- **direct_messages** (`id, conversation_id, sender_id, content`)
 
-5. Manuel olarak ekle:
-   - `JWT_SECRET` — `openssl rand -base64 32` ile üret
-   - `NEXT_PUBLIC_SITE_URL` — `https://<proje>.vercel.app`
-
-6. **Deploy** butonuna bas. İlk deploy sonrası şemayı push'lamak için:
-
-   ```bash
-   # Lokalden, .env'de production DATABASE_URL set edilmiş halde:
-   npx prisma db push
-   npm run db:seed       # opsiyonel: demo veri
-   ```
-
-   Ya da Vercel'in build hook'u `prisma generate && next build`
-   olduğu için ilk deploy zaten Prisma Client'ı üretir.
+Oracle özellikleri: enum yerine `CHECK` constraint, boolean yerine
+`NUMBER(1)`, `SYS_GUID()` yerine uygulama-üretimi cuid PK, `MERGE` ile
+idempotent insert, `FETCH FIRST n ROWS ONLY` ile sayfalama.
 
 ## Proje yapısı
 
 ```
-prisma/
-  schema.prisma          # 9 tablo: User, Department, Resource,
-                         #         Post, Exchange, Review,
-                         #         ExchangeMessage, Favorite,
-                         #         Report, UserSkill
-  seed.ts                # demo data
+db/
+  schema.sql             # Oracle DDL (12 tablo)
+  seed.ts                # Node tabanlı seed (bcrypt hash runtime)
 
 src/
   app/
-    layout.tsx           # global header/footer
-    page.tsx             # landing/feed
+    layout.tsx           # header/footer + EducationalProvider + AppShell
+    page.tsx             # sosyal feed (tek kolon)
     login/, register/    # auth sayfaları
-    posts/               # browse, detay, yeni ilan
+    posts/               # feed, detay, yeni ilan
     exchanges/           # takas listesi + chat
-    messages/            # tüm sohbetler
-    favorites/           # favori ilanlar
-    profile/[id]/        # public profil
-    settings/            # profil düzenleme
+    messages/            # DM listesi + DM detay
+    favorites/, profile/, settings/
     api/                 # tüm REST endpointleri
 
   components/
-    ui/                  # Button, Input, Card, Badge, Toast, Icon
-    layout/              # Header, Footer
-    posts/               # PostCard
+    ui/                  # Button, Input, Card, Badge, Toast, Icon, LoadingScreen
+    layout/              # Header, Footer, AppShell (sayfa geçişleri)
+    posts/               # FeedPost
+    educational/         # SQL öğretici mod (provider, overlay, katalog)
 
   lib/
-    db.ts                # Prisma client
+    db.ts                # Oracle connection pool + sorgu yardımcıları
+    repo.ts              # raw SQL repository katmanı
+    types.ts             # normalize edilmiş veri tipleri
     auth.ts              # JWT, cookie, password
     utils.ts             # tarih, etiket, cn()
 
   middleware.ts          # protected route koruması
 ```
 
-## Veritabanı şeması özet
+## SQL Öğretici Mod
 
-Document 1'deki ER diyagramı 3NF'e normalize edilmiş hali:
+Sol alttaki **SQL** rozetine bas (veya sadece bir karta **4 kez hızlıca**
+tıkla). Ekran kararır, ilgili element spotlight ile çıkar ve sağ üstte
+o aksiyonun arkasındaki **gerçek Oracle SQL** adım adım gösterilir:
+`post-open`, `favorite`, `unfavorite`, `profile-message`, `dm-send`,
+`feed`, `exchange-request`, `exchange-accept`. ESC veya boş alana tıkla → kapat.
 
-- **User** (`id, username, email, passwordHash, avatarName, bio, departmentId`)
-- **UserSkill** (`userId, skill`) — çoklu değerli özellik
-- **Department** (`id, name, faculty`)
-- **Resource** (`id, title, type, description, departmentId`)
-- **Post** (`id, title, ownerId, offerId, requestId, status`)
-- **Exchange** (`id, postId, requesterId, status`)
-- **ExchangeMessage** (`exchangeId, messageNo, senderId, content`) — zayıf varlık
-- **Review** (`id, exchangeId, reviewerId, revieweeId, rating, comment`)
-- **Favorite** (`userId, postId, addedAt`) — N:M
-- **Report** (`id, reporterId, reportedUserId, targetType, targetId, reason, status`)
+## Notlar
 
-## Komutlar
-
-```bash
-npm run dev          # dev sunucu
-npm run build        # production build
-npm run start        # production sunucu
-npm run db:push      # şemayı veritabanına yansıt
-npm run db:migrate   # migration üret + uygula
-npm run db:seed      # demo veri
-npm run db:studio    # Prisma Studio GUI
-```
+- Docker Desktop kapanırsa container durur; `npm run db:up` ile geri başlar.
+  Container'a `--restart unless-stopped` policy uygulanmıştır.
+- Veri container filesystem'inde tutulur; `db:reset` tüm tabloları siler.
+- Vercel deploy için Oracle Cloud Autonomous DB (Free Tier) + wallet gerekir;
+  `ORACLE_CONNECT_STRING`'i TNS alias'a, `TNS_ADMIN`'i wallet klasörüne ayarla.
 
 ## Lisans
 

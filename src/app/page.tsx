@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { departments, posts, stats } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 import { FeedPost, type FeedPostData } from "@/components/posts/FeedPost";
 import { Icon } from "@/components/ui/Icon";
@@ -7,53 +7,32 @@ import { Icon } from "@/components/ui/Icon";
 export const dynamic = "force-dynamic";
 
 async function getData(userId: string | null) {
-  const [posts, departments, stats] = await Promise.all([
-    prisma.post.findMany({
-      where: { status: "ACTIVE" },
-      orderBy: { createdAt: "desc" },
-      take: 30,
-      include: {
-        owner: { include: { department: { select: { name: true } } } },
-        offer: { select: { title: true, type: true } },
-        request: { select: { title: true, type: true } },
-        favorites: userId ? { where: { userId } } : false,
-      },
-    }),
-    prisma.department.findMany({
-      orderBy: { name: "asc" },
-      take: 6,
-    }),
-    Promise.all([
-      prisma.post.count({ where: { status: "ACTIVE" } }),
-      prisma.user.count(),
-      prisma.exchange.count({ where: { status: "COMPLETED" } }),
-    ]),
+  const [feed, depts, counts] = await Promise.all([
+    posts.list(userId ? { id: userId } : null, { limit: 30, sort: "new" }),
+    departments.list(),
+    stats.counts(),
   ]);
 
-  const feed: FeedPostData[] = posts.map((p: any) => ({
+  const feedData: FeedPostData[] = feed.map((p) => ({
     id: p.id,
     title: p.title,
     description: p.description,
     status: p.status,
-    createdAt: p.createdAt,
+    createdAt: p.createdAt as any,
     owner: {
       id: p.owner.id,
       username: p.owner.username,
       avatarName: p.owner.avatarName,
-      department: p.owner.department,
+      department: p.owner.department ?? null,
     },
-    offer: p.offer,
-    request: p.request,
-    favoritedByMe: Array.isArray(p.favorites) && p.favorites.length > 0,
+    offer: { title: p.offer.title, type: p.offer.type },
+    request: { title: p.request.title, type: p.request.type },
+    favoritedByMe: p.favoritedByMe,
     isMine: userId === p.ownerId,
     authed: !!userId,
   }));
 
-  return {
-    feed,
-    departments,
-    stats: { posts: stats[0], users: stats[1], completed: stats[2] },
-  };
+  return { feed: feedData, departments: depts.slice(0, 6), stats: counts };
 }
 
 export default async function HomePage() {
@@ -63,9 +42,7 @@ export default async function HomePage() {
   return (
     <div className="page-container py-6 md:py-8">
       <div className="grid lg:grid-cols-[1fr_320px] gap-8">
-        {/* Sol — Feed */}
         <div className="max-w-[640px] mx-auto w-full lg:mx-0">
-          {/* Hero compact */}
           {!me && (
             <section className="relative mb-6 overflow-hidden rounded-[24px] bg-gradient-to-br from-[var(--color-brand-600)] via-[var(--color-brand-500)] to-[#7aa8ff] text-white p-6 sm:p-8">
               <div className="absolute inset-0 opacity-30 [background:radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.5),transparent_40%),radial-gradient(circle_at_80%_60%,rgba(255,255,255,0.25),transparent_45%)]" />
@@ -96,7 +73,6 @@ export default async function HomePage() {
             </section>
           )}
 
-          {/* Stories benzeri department şeridi */}
           <div className="mb-4 -mx-2 px-2 overflow-x-auto scrollbar-thin">
             <div className="flex gap-2 pb-1">
               <Link
@@ -125,7 +101,6 @@ export default async function HomePage() {
             </div>
           </div>
 
-          {/* Feed kartları */}
           <div className="space-y-5">
             {data.feed.map((p) => (
               <FeedPost key={p.id} post={p} />
@@ -138,7 +113,6 @@ export default async function HomePage() {
           </div>
         </div>
 
-        {/* Sağ — Sticky sidebar (sadece desktop) */}
         <aside className="hidden lg:block">
           <div className="sticky top-20 space-y-4">
             <div className="bg-white border border-[var(--color-mist)] rounded-[20px] p-5">
@@ -158,7 +132,7 @@ export default async function HomePage() {
               <p className="text-[12px] text-[var(--color-slate)] leading-relaxed">
                 Sol alttaki <span className="font-mono font-bold">SQL</span> rozetine bas
                 veya herhangi bir karta <b>4 kez hızlıca</b> tıkla — o aksiyonun
-                arkasında çalışan sorguyu adım adım göster.
+                arkasında çalışan <b>Oracle SQL</b> sorgusunu adım adım göster.
               </p>
             </div>
 

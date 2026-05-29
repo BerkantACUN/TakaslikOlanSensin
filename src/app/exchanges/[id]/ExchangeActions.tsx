@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
+import { useEducation } from "@/components/educational/EducationalProvider";
 
 export function ExchangeActions({
   exchangeId,
@@ -21,6 +22,7 @@ export function ExchangeActions({
 }) {
   const router = useRouter();
   const { push } = useToast();
+  const { trigger } = useEducation();
   const [busy, setBusy] = useState(false);
 
   async function action(path: string, body?: any) {
@@ -35,6 +37,7 @@ export function ExchangeActions({
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? "Hata");
       }
+      if (path === "/accept") trigger("exchange-accept", { exchangeId });
       router.refresh();
     } catch (e) {
       push({

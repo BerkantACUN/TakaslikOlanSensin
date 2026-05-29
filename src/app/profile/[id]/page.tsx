@@ -1,11 +1,10 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { posts, users } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
-import { PostCard, type PostCardData } from "@/components/posts/PostCard";
+import { FeedPost, type FeedPostData } from "@/components/posts/FeedPost";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { formatDate, timeAgo } from "@/lib/utils";
 import { ProfileActions } from "./ProfileActions";
@@ -20,62 +19,38 @@ export default async function ProfilePage({
   const { id } = await params;
   const me = await getCurrentUser();
 
-  const user = await prisma.user.findUnique({
-    where: { id },
-    include: {
-      department: true,
-      skills: true,
-      posts: {
-        where: { status: "ACTIVE" },
-        orderBy: { createdAt: "desc" },
-        take: 12,
-        include: {
-          owner: { include: { department: { select: { name: true } } } },
-          offer: { select: { title: true, type: true } },
-          request: { select: { title: true, type: true } },
-          favorites: me?.id ? { where: { userId: me.id } } : undefined,
-        },
-      },
-      reviewsGot: {
-        orderBy: { createdAt: "desc" },
-        take: 8,
-        include: {
-          reviewer: { select: { username: true, avatarName: true } },
-        },
-      },
-    },
-  });
-
+  const user = await users.findDetailed(id);
   if (!user) return notFound();
 
-  const ratings = user.reviewsGot.map((r) => r.rating);
-  const avg =
-    ratings.length > 0
-      ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1)
-      : null;
+  const [ownerPosts, rating, reviews] = await Promise.all([
+    posts.byOwner(id, me ? { id: me.id } : null, 12),
+    users.averageRating(id),
+    users.reviewsReceived(id, 8),
+  ]);
 
-  const cards: PostCardData[] = user.posts.map((p: any) => ({
+  const avg = rating.avg != null ? rating.avg.toFixed(1) : null;
+
+  const cards: FeedPostData[] = ownerPosts.map((p) => ({
     id: p.id,
     title: p.title,
     description: p.description,
     status: p.status,
-    createdAt: p.createdAt,
+    createdAt: p.createdAt as any,
     owner: {
       id: p.owner.id,
       username: p.owner.username,
       avatarName: p.owner.avatarName,
-      department: p.owner.department,
+      department: p.owner.department ?? null,
     },
-    offer: p.offer,
-    request: p.request,
-    favoritedByMe: Array.isArray(p.favorites) && p.favorites.length > 0,
+    offer: { title: p.offer.title, type: p.offer.type },
+    request: { title: p.request.title, type: p.request.type },
+    favoritedByMe: p.favoritedByMe,
     isMine: me?.id === p.ownerId,
     authed: !!me,
   }));
 
   return (
-    <div className="page-container py-8 md:py-10">
-      {/* Profil header */}
+    <div className="page-container py-8 md:py-10 max-w-3xl">
       <div className="bg-white border border-[var(--color-mist)] rounded-[24px] p-6 md:p-8 mb-8">
         <div className="flex flex-col sm:flex-row gap-6 items-start">
           <Avatar name={user.avatarName ?? user.username} size={96} />
@@ -99,7 +74,7 @@ export default async function ProfilePage({
                     size={11}
                     className="text-[var(--color-accent-amber)]"
                   />
-                  {avg} · {ratings.length} değerlendirme
+                  {avg} · {rating.count} değerlendirme
                 </Badge>
               )}
             </div>
@@ -115,8 +90,8 @@ export default async function ProfilePage({
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {user.skills.map((s) => (
-                    <Badge key={s.skill} tone="soft">
-                      {s.skill}
+                    <Badge key={s} tone="soft">
+                      {s}
                     </Badge>
                   ))}
                 </div>
@@ -135,7 +110,6 @@ export default async function ProfilePage({
         </div>
       </div>
 
-      {/* Aktif ilanları */}
       <section className="mb-12">
         <h2 className="text-[22px] font-bold tracking-tight mb-4">
           Aktif ilanları
@@ -147,26 +121,25 @@ export default async function ProfilePage({
             description="Bu kullanıcı şu an aktif bir takas ilanı paylaşmamış."
           />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div className="space-y-5">
             {cards.map((p) => (
-              <PostCard key={p.id} post={p} />
+              <FeedPost key={p.id} post={p} />
             ))}
           </div>
         )}
       </section>
 
-      {/* Değerlendirmeler */}
       <section>
         <h2 className="text-[22px] font-bold tracking-tight mb-4">
           Değerlendirmeler
         </h2>
-        {user.reviewsGot.length === 0 ? (
+        {reviews.length === 0 ? (
           <p className="text-[14px] text-[var(--color-slate)]">
             Henüz değerlendirme yok.
           </p>
         ) : (
           <div className="grid sm:grid-cols-2 gap-3">
-            {user.reviewsGot.map((r) => (
+            {reviews.map((r) => (
               <div
                 key={r.id}
                 className="bg-white border border-[var(--color-mist)] rounded-[16px] p-4"

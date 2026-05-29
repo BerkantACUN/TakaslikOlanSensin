@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { users } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 
 const schema = z.object({
@@ -20,27 +20,11 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Geçersiz veri" }, { status: 400 });
   }
 
-  const d = parsed.data;
-
-  await prisma.$transaction(async (tx) => {
-    await tx.user.update({
-      where: { id: me.id },
-      data: {
-        avatarName: d.avatarName ?? null,
-        bio: d.bio ?? null,
-        departmentId: d.departmentId || null,
-      },
-    });
-
-    if (Array.isArray(d.skills)) {
-      await tx.userSkill.deleteMany({ where: { userId: me.id } });
-      if (d.skills.length > 0) {
-        await tx.userSkill.createMany({
-          data: d.skills.map((s) => ({ userId: me.id, skill: s })),
-          skipDuplicates: true,
-        });
-      }
-    }
+  await users.updateProfile(me.id, {
+    avatarName: parsed.data.avatarName ?? null,
+    bio: parsed.data.bio ?? null,
+    departmentId: parsed.data.departmentId || null,
+    skills: parsed.data.skills,
   });
 
   return NextResponse.json({ ok: true });

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { exchanges } from "@/lib/repo";
 import { requireUser } from "@/lib/auth";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -22,28 +22,11 @@ export default async function ExchangesPage({
   const tab: Tab = sp.tab === "outgoing" ? "outgoing" : "incoming";
 
   const [incoming, outgoing] = await Promise.all([
-    prisma.exchange.findMany({
-      where: { post: { ownerId: me.id } },
-      orderBy: { createdAt: "desc" },
-      include: {
-        post: { select: { id: true, title: true, status: true } },
-        requester: { select: { id: true, username: true, avatarName: true } },
-      },
-    }),
-    prisma.exchange.findMany({
-      where: { requesterId: me.id },
-      orderBy: { createdAt: "desc" },
-      include: {
-        post: {
-          include: {
-            owner: { select: { id: true, username: true, avatarName: true } },
-          },
-        },
-      },
-    }),
+    exchanges.incoming(me.id),
+    exchanges.outgoing(me.id),
   ]);
 
-  const data = tab === "incoming" ? incoming : outgoing;
+  const rows = tab === "incoming" ? incoming : outgoing;
 
   return (
     <div className="page-container py-8 md:py-10">
@@ -63,7 +46,7 @@ export default async function ExchangesPage({
         </TabLink>
       </div>
 
-      {data.length === 0 ? (
+      {rows.length === 0 ? (
         <EmptyState
           icon={<Icon.MessageCircle />}
           title={
@@ -86,30 +69,33 @@ export default async function ExchangesPage({
         />
       ) : (
         <div className="grid gap-3">
-          {data.map((ex: any) => {
-            const other = tab === "incoming" ? ex.requester : ex.post.owner;
+          {rows.map((ex: any) => {
+            const isIncoming = tab === "incoming";
+            const otherId = isIncoming ? ex.R_ID : ex.O_ID;
+            const otherUsername = isIncoming ? ex.R_USERNAME : ex.O_USERNAME;
+            const otherAvatar = isIncoming ? ex.R_AVATAR : ex.O_AVATAR;
             return (
               <Link
-                key={ex.id}
-                href={`/exchanges/${ex.id}`}
+                key={ex.ID}
+                href={`/exchanges/${ex.ID}`}
                 className="group bg-white border border-[var(--color-mist)] rounded-[16px] p-4 flex items-center gap-4 hover:border-[var(--color-carbon)] transition"
               >
-                <Avatar name={other.avatarName ?? other.username} size={44} />
+                <Avatar name={otherAvatar ?? otherUsername} size={44} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-semibold text-[14px] truncate">
-                      {ex.post.title}
+                      {ex.P_TITLE}
                     </p>
-                    <Badge tone={statusTone(ex.status)}>
-                      {exchangeStatusLabel(ex.status)}
+                    <Badge tone={statusTone(ex.STATUS)}>
+                      {exchangeStatusLabel(ex.STATUS)}
                     </Badge>
                   </div>
                   <p className="text-[12px] text-[var(--color-slate)] mt-0.5">
-                    {tab === "incoming"
-                      ? `${other.avatarName ?? other.username} teklif etti`
-                      : `${other.avatarName ?? other.username} ile`}
+                    {isIncoming
+                      ? `${otherUsername} teklif etti`
+                      : `${otherUsername} ile`}
                     {" · "}
-                    {timeAgo(ex.createdAt)}
+                    {timeAgo(ex.CREATED_AT)}
                   </p>
                 </div>
                 <Icon.ArrowRight className="text-[var(--color-slate)] group-hover:text-[var(--color-carbon)] transition" />

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { users } from "@/lib/repo";
 import { hashPassword, setAuthCookie, signToken } from "@/lib/auth";
 
 const schema = z.object({
@@ -26,35 +26,27 @@ export async function POST(req: Request) {
 
   const { username, email, password, departmentId } = parsed.data;
 
-  const existing = await prisma.user.findFirst({
-    where: { OR: [{ email }, { username }] },
-  });
-  if (existing) {
-    return NextResponse.json(
-      {
-        error:
-          existing.email === email
-            ? "Bu e-posta zaten kayıtlı"
-            : "Bu kullanıcı adı alınmış",
-      },
-      { status: 409 },
-    );
+  const exists = await users.exists({ email, username });
+  if (exists?.sameEmail) {
+    return NextResponse.json({ error: "Bu e-posta zaten kayıtlı" }, { status: 409 });
+  }
+  if (exists?.sameUsername) {
+    return NextResponse.json({ error: "Bu kullanıcı adı alınmış" }, { status: 409 });
   }
 
   const passwordHash = await hashPassword(password);
-  const user = await prisma.user.create({
-    data: {
-      email,
-      username,
-      passwordHash,
-      avatarName: username,
-      departmentId: departmentId || null,
-    },
-    select: { id: true, username: true, email: true },
+  const user = await users.create({
+    email,
+    username,
+    passwordHash,
+    avatarName: username,
+    departmentId: departmentId || null,
   });
 
   const token = await signToken({ sub: user.id, username: user.username });
   await setAuthCookie(token);
 
-  return NextResponse.json({ user });
+  return NextResponse.json({
+    user: { id: user.id, username: user.username, email: user.email },
+  });
 }

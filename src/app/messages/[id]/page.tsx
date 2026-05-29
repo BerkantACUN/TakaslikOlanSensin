@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { dm } from "@/lib/repo";
 import { requireUser } from "@/lib/auth";
 import { Avatar } from "@/components/ui/Avatar";
 import { Icon } from "@/components/ui/Icon";
@@ -16,19 +16,12 @@ export default async function DMPage({
   const me = await requireUser();
   const { id } = await params;
 
-  const convo = await prisma.conversation.findUnique({
-    where: { id },
-    include: {
-      userA: true,
-      userB: true,
-      messages: { orderBy: { createdAt: "asc" } },
-    },
-  });
-
+  const convo = await dm.findByIdWithUsers(id);
   if (!convo) return notFound();
   if (convo.userAId !== me.id && convo.userBId !== me.id) return notFound();
 
   const other = convo.userAId === me.id ? convo.userB : convo.userA;
+  const messages = await dm.listMessages(id);
 
   return (
     <div className="page-container py-6 md:py-8 max-w-2xl">
@@ -68,11 +61,11 @@ export default async function DMPage({
             username: other.username,
             avatarName: other.avatarName,
           }}
-          initial={convo.messages.map((m) => ({
+          initial={messages.map((m) => ({
             id: m.id,
             senderId: m.senderId,
             content: m.content,
-            createdAt: m.createdAt,
+            createdAt: m.createdAt as any,
           }))}
         />
       </div>

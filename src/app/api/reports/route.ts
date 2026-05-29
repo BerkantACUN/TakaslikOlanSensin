@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { reports } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 
 const REASONS = [
@@ -29,17 +29,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Geçersiz veri" }, { status: 400 });
   }
 
-  const d = parsed.data;
-  const report = await prisma.report.create({
-    data: {
-      reporterId: me.id,
-      targetType: d.targetType,
-      targetId: d.targetId,
-      reportedUserId: d.reportedUserId || null,
-      reason: d.reason,
-      details: d.details || null,
-    },
+  await reports.create({
+    reporterId: me.id,
+    reportedUserId: parsed.data.reportedUserId || null,
+    targetType: parsed.data.targetType,
+    targetId: parsed.data.targetId,
+    reason: parsed.data.reason,
+    details: parsed.data.details || null,
   });
 
-  return NextResponse.json({ report });
+  return NextResponse.json({ ok: true });
 }

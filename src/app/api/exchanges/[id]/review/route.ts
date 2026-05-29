@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { exchanges } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 
 const schema = z.object({
@@ -22,45 +22,14 @@ export async function POST(
     return NextResponse.json({ error: "Geçersiz puan" }, { status: 400 });
   }
 
-  const ex = await prisma.exchange.findUnique({
-    where: { id },
-    include: { post: true },
-  });
-  if (!ex) return NextResponse.json({ error: "Bulunamadı" }, { status: 404 });
-  if (ex.status !== "COMPLETED") {
-    return NextResponse.json(
-      { error: "Sadece tamamlanmış takaslar için değerlendirme yapılır" },
-      { status: 400 },
-    );
+  const r = await exchanges.addReview(
+    id,
+    me.id,
+    parsed.data.rating,
+    parsed.data.comment ?? null,
+  );
+  if (!r.ok) {
+    return NextResponse.json({ error: r.error ?? "Hata" }, { status: 400 });
   }
-
-  const participants = [ex.requesterId, ex.post.ownerId];
-  if (!participants.includes(me.id)) {
-    return NextResponse.json({ error: "Yetkisiz" }, { status: 403 });
-  }
-
-  const revieweeId =
-    me.id === ex.requesterId ? ex.post.ownerId : ex.requesterId;
-
-  const existing = await prisma.review.findUnique({
-    where: { exchangeId_reviewerId: { exchangeId: id, reviewerId: me.id } },
-  });
-  if (existing) {
-    return NextResponse.json(
-      { error: "Bu takas için zaten değerlendirme yaptın" },
-      { status: 409 },
-    );
-  }
-
-  const review = await prisma.review.create({
-    data: {
-      exchangeId: id,
-      reviewerId: me.id,
-      revieweeId,
-      rating: parsed.data.rating,
-      comment: parsed.data.comment || null,
-    },
-  });
-
-  return NextResponse.json({ review });
+  return NextResponse.json({ ok: true });
 }

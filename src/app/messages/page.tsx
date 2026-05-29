@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { dm, exchanges } from "@/lib/repo";
 import { requireUser } from "@/lib/auth";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -13,38 +13,34 @@ export const dynamic = "force-dynamic";
 export default async function MessagesPage() {
   const me = await requireUser();
 
-  const [convos, exchanges] = await Promise.all([
-    prisma.conversation.findMany({
-      where: { OR: [{ userAId: me.id }, { userBId: me.id }] },
-      orderBy: { lastMessageAt: "desc" },
-      include: {
-        userA: { select: { id: true, username: true, avatarName: true } },
-        userB: { select: { id: true, username: true, avatarName: true } },
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
-      },
-    }),
-    prisma.exchange.findMany({
-      where: {
-        OR: [{ requesterId: me.id }, { post: { ownerId: me.id } }],
-        status: { in: ["ACCEPTED", "COMPLETED"] },
-      },
-      orderBy: { updatedAt: "desc" },
-      include: {
-        post: {
-          select: {
-            id: true,
-            title: true,
-            ownerId: true,
-            owner: { select: { id: true, username: true, avatarName: true } },
-          },
-        },
-        requester: { select: { id: true, username: true, avatarName: true } },
-        messages: { orderBy: { messageNo: "desc" }, take: 1 },
-      },
-    }),
+  const [convoRows, incoming, outgoing] = await Promise.all([
+    dm.listForUser(me.id),
+    exchanges.incoming(me.id),
+    exchanges.outgoing(me.id),
   ]);
 
-  const isEmpty = convos.length === 0 && exchanges.length === 0;
+  const convos = convoRows.map((c: any) => {
+    const isA = c.USER_A_ID === me.id;
+    return {
+      id: c.ID,
+      other: {
+        username: isA ? c.B_USERNAME : c.A_USERNAME,
+        avatarName: isA ? c.B_AVATAR : c.A_AVATAR,
+      },
+      lastMessageAt: c.LAST_MESSAGE_AT,
+      lastContent: c.LAST_CONTENT as string | null,
+      lastSender: c.LAST_SENDER as string | null,
+    };
+  });
+
+  const exchangeChats = [...incoming, ...outgoing]
+    .filter((e: any) => ["ACCEPTED", "COMPLETED"].includes(e.STATUS))
+    .sort(
+      (a: any, b: any) =>
+        new Date(b.UPDATED_AT).getTime() - new Date(a.UPDATED_AT).getTime(),
+    );
+
+  const isEmpty = convos.length === 0 && exchangeChats.length === 0;
 
   return (
     <div className="page-container py-8 md:py-10 max-w-3xl">
@@ -74,86 +70,72 @@ export default async function MessagesPage() {
                 Direkt mesajlar
               </h2>
               <div className="bg-white border border-[var(--color-mist)] rounded-[20px] overflow-hidden divide-y divide-[var(--color-mist)]">
-                {convos.map((c) => {
-                  const other = c.userAId === me.id ? c.userB : c.userA;
-                  const last = c.messages[0];
-                  return (
-                    <Link
-                      key={c.id}
-                      href={`/messages/${c.id}`}
-                      data-edu="open-conversation"
-                      className="flex items-center gap-4 p-4 hover:bg-[var(--color-fog)] transition"
-                    >
-                      <Avatar
-                        name={other.avatarName ?? other.username}
-                        size={48}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-[14px] truncate">
-                          {other.avatarName ?? other.username}
+                {convos.map((c) => (
+                  <Link
+                    key={c.id}
+                    href={`/messages/${c.id}`}
+                    data-edu="open-conversation"
+                    className="flex items-center gap-4 p-4 hover:bg-[var(--color-fog)] transition"
+                  >
+                    <Avatar
+                      name={c.other.avatarName ?? c.other.username}
+                      size={48}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-[14px] truncate">
+                        {c.other.avatarName ?? c.other.username}
+                      </p>
+                      {c.lastContent ? (
+                        <p className="text-[13px] text-[var(--color-slate)] truncate mt-0.5">
+                          {c.lastSender === me.id ? "Sen: " : ""}
+                          {c.lastContent}
                         </p>
-                        {last ? (
-                          <p className="text-[13px] text-[var(--color-slate)] truncate mt-0.5">
-                            {last.senderId === me.id ? "Sen: " : ""}
-                            {last.content}
-                          </p>
-                        ) : (
-                          <p className="text-[12px] italic text-[var(--color-slate)] mt-0.5">
-                            Henüz mesaj yok
-                          </p>
-                        )}
-                      </div>
-                      <span className="text-[11px] text-[var(--color-slate)] shrink-0">
-                        {timeAgo(c.lastMessageAt)}
-                      </span>
-                    </Link>
-                  );
-                })}
+                      ) : (
+                        <p className="text-[12px] italic text-[var(--color-slate)] mt-0.5">
+                          Henüz mesaj yok
+                        </p>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-[var(--color-slate)] shrink-0">
+                      {timeAgo(c.lastMessageAt)}
+                    </span>
+                  </Link>
+                ))}
               </div>
             </section>
           )}
 
-          {exchanges.length > 0 && (
+          {exchangeChats.length > 0 && (
             <section>
               <h2 className="text-[14px] font-semibold uppercase tracking-wider text-[var(--color-slate)] mb-3">
                 Takas sohbetleri
               </h2>
               <div className="bg-white border border-[var(--color-mist)] rounded-[20px] overflow-hidden divide-y divide-[var(--color-mist)]">
-                {exchanges.map((ex: any) => {
-                  const other =
-                    ex.post.ownerId === me.id ? ex.requester : ex.post.owner;
-                  const last = ex.messages[0];
+                {exchangeChats.map((ex: any) => {
+                  const otherUsername = ex.R_USERNAME ?? ex.O_USERNAME;
+                  const otherAvatar = ex.R_AVATAR ?? ex.O_AVATAR;
                   return (
                     <Link
-                      key={ex.id}
-                      href={`/exchanges/${ex.id}`}
+                      key={ex.ID}
+                      href={`/exchanges/${ex.ID}`}
                       className="flex items-center gap-4 p-4 hover:bg-[var(--color-fog)] transition"
                     >
-                      <Avatar
-                        name={other.avatarName ?? other.username}
-                        size={48}
-                      />
+                      <Avatar name={otherAvatar ?? otherUsername} size={48} />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-[14px] truncate">
-                            {other.avatarName ?? other.username}
+                            {otherUsername}
                           </p>
                           <Badge tone="soft">
-                            {exchangeStatusLabel(ex.status)}
+                            {exchangeStatusLabel(ex.STATUS)}
                           </Badge>
                         </div>
                         <p className="text-[12px] text-[var(--color-slate)] truncate">
-                          {ex.post.title}
+                          {ex.P_TITLE}
                         </p>
-                        {last ? (
-                          <p className="text-[13px] text-[var(--color-carbon)] truncate mt-1">
-                            {last.senderId === me.id ? "Sen: " : ""}
-                            {last.content}
-                          </p>
-                        ) : null}
                       </div>
                       <span className="text-[11px] text-[var(--color-slate)] shrink-0">
-                        {timeAgo(ex.updatedAt)}
+                        {timeAgo(ex.UPDATED_AT)}
                       </span>
                     </Link>
                   );

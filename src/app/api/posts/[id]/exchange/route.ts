@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { posts, exchanges } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(
@@ -10,7 +10,7 @@ export async function POST(
   if (!me) return NextResponse.json({ error: "Giriş gerekli" }, { status: 401 });
 
   const { id: postId } = await params;
-  const post = await prisma.post.findUnique({ where: { id: postId } });
+  const post = await posts.findById(postId, { id: me.id });
   if (!post) return NextResponse.json({ error: "İlan bulunamadı" }, { status: 404 });
   if (post.ownerId === me.id) {
     return NextResponse.json(
@@ -22,16 +22,11 @@ export async function POST(
     return NextResponse.json({ error: "İlan kapalı" }, { status: 400 });
   }
 
-  const existing = await prisma.exchange.findUnique({
-    where: { postId_requesterId: { postId, requesterId: me.id } },
-  });
+  const existing = await exchanges.findForRequester(postId, me.id);
   if (existing) {
     return NextResponse.json({ exchange: existing });
   }
 
-  const exchange = await prisma.exchange.create({
-    data: { postId, requesterId: me.id },
-  });
-
+  const exchange = await exchanges.create(postId, me.id);
   return NextResponse.json({ exchange });
 }

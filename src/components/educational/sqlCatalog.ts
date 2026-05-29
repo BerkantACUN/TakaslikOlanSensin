@@ -1,64 +1,63 @@
 /* -------------------------------------------------------------------
-   SQL Eğitim Kataloğu
-   Her kullanıcı aksiyonunun arka planda hangi SQL sorgusunu çalıştırdığını
-   adım adım gösteren öğretici şablonlar. CampusSwap'in Prisma + SQLite
-   karşılıklarıdır; Postgres'te de aynı sorgular geçerlidir.
+   SQL Eğitim Kataloğu — Oracle Database 23ai
+   Her kullanıcı aksiyonunun arka planda çalıştırdığı gerçek Oracle SQL
+   sorgularını adım adım gösteren öğretici şablonlar. CampusSwap'in
+   node-oracledb + raw SQL repository katmanına birebir karşılık gelir.
+   Bind değişkenleri Oracle stili `:param` ile gösterilir.
 ------------------------------------------------------------------- */
 
-export type SqlStep = {
+export interface SqlStep {
   title: string;
   description: string;
   sql: string;
   highlight?: string;
-};
+}
 
-export type SqlScenario = {
-  /** Sahne başlığı */
+export interface SqlScenario {
   title: string;
-  /** Hikaye tek satır özet */
   subtitle: string;
-  /** Veritabanı resmi (hangi tablolar konuşuyor) */
   tables: string[];
-  /** Adım adım sorgular */
   steps: SqlStep[];
-  /** Hangi DOM kancasını oka tutalım — data-edu attribute değeri */
   target?: string;
-};
+}
 
 export const SQL_CATALOG: Record<string, SqlScenario> = {
   /* -------------------- POST AÇMAK -------------------- */
   "post-open": {
     title: "İlan detayını görüntülemek",
-    subtitle: "Tek bir post için sahibi, kaynakları ve favori durumu",
-    tables: ["posts", "users", "resources", "favorites"],
+    subtitle: "Tek post için sahip, kaynaklar ve favori durumu (Oracle JOIN)",
+    tables: ["posts", "users", "departments", "resources", "favorites"],
     target: "post-card",
     steps: [
       {
-        title: "1) İlanı, sahibini ve kaynakları çek",
+        title: "1) İlanı, sahibini ve kaynakları tek sorguda çek",
         description:
-          "Bir JOIN zinciri: post → owner (User) → department; ayrıca offer ve request kaynakları.",
+          "posts → users → departments JOIN zinciri; offer ve request resources iki kez JOIN'lenir. Favori durumu skaler alt sorgu + CASE ile aynı sorguda gelir.",
         sql: `SELECT  p.id, p.title, p.description, p.status,
         u.id AS owner_id, u.username, u.avatar_name,
         d.name AS department,
-        ofr.title AS offer_title,  ofr.type AS offer_type,
-        req.title AS request_title, req.type AS request_type
+        o.title AS offer_title,  o.type AS offer_type,
+        r.title AS request_title, r.type AS request_type,
+        CASE WHEN EXISTS (
+          SELECT 1 FROM favorites f
+          WHERE f.user_id = :meId AND f.post_id = p.id
+        ) THEN 1 ELSE 0 END AS fav_flag
 FROM    posts p
-JOIN    users u           ON u.id  = p.owner_id
-LEFT JOIN departments d   ON d.id  = u.department_id
-JOIN    resources ofr     ON ofr.id = p.offer_id
-JOIN    resources req     ON req.id = p.request_id
+JOIN    users u           ON u.id = p.owner_id
+LEFT JOIN departments d   ON d.id = u.department_id
+JOIN    resources o       ON o.id = p.offer_id
+JOIN    resources r       ON r.id = p.request_id
 WHERE   p.id = :postId;`,
         highlight: "JOIN",
       },
       {
-        title: "2) Bu ilanı favorilemiş miyim?",
+        title: "2) Sahibin ortalama puanı",
         description:
-          "Login'liyim diye favoriler tablosunda kompozit anahtar (userId, postId) ile arıyorum.",
-        sql: `SELECT 1
-FROM   favorites
-WHERE  user_id = :meId
-  AND  post_id = :postId;`,
-        highlight: "favorites",
+          "reviews tablosunda AVG ve COUNT — Oracle agregat fonksiyonları. Puan yoksa AVG NULL döner.",
+        sql: `SELECT AVG(rating) AS avg_rating, COUNT(*) AS cnt
+FROM   reviews
+WHERE  reviewee_id = :ownerId;`,
+        highlight: "AVG",
       },
     ],
   },
@@ -66,23 +65,25 @@ WHERE  user_id = :meId
   /* -------------------- FAVORİLE -------------------- */
   favorite: {
     title: "İlanı favoriye eklemek",
-    subtitle: "N:M ilişki — user_id + post_id kompozit anahtarı",
+    subtitle: "N:M ilişki — Oracle MERGE ile idempotent ekleme",
     tables: ["favorites"],
     target: "post-card",
     steps: [
       {
-        title: "Yoksa ekle, varsa dokunma (upsert)",
+        title: "MERGE — yoksa ekle, varsa dokunma",
         description:
-          "Prisma `favorite.upsert()` çağrısı; SQLite/Postgres'te `INSERT ... ON CONFLICT DO NOTHING` olarak çalışır.",
-        sql: `INSERT INTO favorites (user_id, post_id, added_at)
-VALUES (:meId, :postId, CURRENT_TIMESTAMP)
-ON CONFLICT (user_id, post_id) DO NOTHING;`,
-        highlight: "ON CONFLICT",
+          "Oracle'da PostgreSQL'in `ON CONFLICT`'i yerine MERGE kullanılır. DUAL üstünden kaynak satır kurgulanıp eşleşme yoksa INSERT edilir.",
+        sql: `MERGE INTO favorites f
+USING (SELECT :meId AS user_id, :postId AS post_id FROM dual) src
+   ON (f.user_id = src.user_id AND f.post_id = src.post_id)
+WHEN NOT MATCHED THEN
+  INSERT (user_id, post_id) VALUES (src.user_id, src.post_id);`,
+        highlight: "MERGE",
       },
       {
-        title: "Favorilerimi listele (sonradan)",
+        title: "Favorilerimi listele",
         description:
-          "Sıralama added_at DESC. Post tablosu ile JOIN yapıp ilan bilgilerini de çekiyoruz.",
+          "favorites → posts JOIN, added_at DESC sıralı. FETCH FIRST ile limit Oracle 12c+ sözdizimidir.",
         sql: `SELECT  p.*
 FROM    favorites f
 JOIN    posts p ON p.id = f.post_id
@@ -95,13 +96,14 @@ ORDER BY f.added_at DESC;`,
   /* -------------------- FAVORİYİ KALDIR -------------------- */
   unfavorite: {
     title: "Favoriden çıkarmak",
-    subtitle: "Tek bir kayıt siliyoruz, kompozit anahtarla",
+    subtitle: "Kompozit anahtarla tek satır siler",
     tables: ["favorites"],
     target: "post-card",
     steps: [
       {
         title: "DELETE",
-        description: "İki sütunlu primary key olduğu için silme tek satırı etkiler.",
+        description:
+          "(user_id, post_id) kompozit primary key olduğu için silme tam bir satırı hedefler.",
         sql: `DELETE FROM favorites
 WHERE  user_id = :meId
   AND  post_id = :postId;`,
@@ -113,32 +115,31 @@ WHERE  user_id = :meId
   /* -------------------- PROFİL MESAJ AT -------------------- */
   "profile-message": {
     title: "Direkt mesajlaşma başlatmak",
-    subtitle: "Kanonik anahtar (userA < userB) ile aynı çiftin tek konuşması olur",
+    subtitle: "Kanonik anahtar (user_a_id < user_b_id) tek konuşma garantiler",
     tables: ["conversations", "direct_messages"],
     target: "profile-message",
     steps: [
       {
-        title: "1) İki kullanıcı arasında konuşma var mı?",
+        title: "1) Kanonik çift halinde konuşma var mı?",
         description:
-          "userAId < userBId garantisi sayesinde tek bir kanonik kayıt aranıyor.",
+          "Uygulama iki id'yi sıralayıp küçüğü user_a, büyüğü user_b yapar. Böylece (a,b) ve (b,a) aynı satıra düşer; CHECK (user_a_id < user_b_id) bunu DB seviyesinde de zorlar.",
         sql: `SELECT id
 FROM   conversations
-WHERE  user_a_id = MIN(:meId, :otherId)
-  AND  user_b_id = MAX(:meId, :otherId);`,
+WHERE  user_a_id = :userA   -- LEAST(:me, :other)
+  AND  user_b_id = :userB;  -- GREATEST(:me, :other)`,
       },
       {
-        title: "2) Yoksa oluştur (upsert)",
+        title: "2) Yoksa oluştur",
         description:
-          "Prisma tarafında `conversation.upsert()`. SQL'de eşdeğeri:",
-        sql: `INSERT INTO conversations (id, user_a_id, user_b_id, created_at, last_message_at)
-VALUES (:cuid, :userA, :userB, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-ON CONFLICT (user_a_id, user_b_id) DO NOTHING;`,
-        highlight: "ON CONFLICT",
+          "id uygulama tarafında üretilen kısa cuid. UNIQUE(user_a_id, user_b_id) çakışmayı engeller.",
+        sql: `INSERT INTO conversations (id, user_a_id, user_b_id)
+VALUES (:cuid, :userA, :userB);`,
+        highlight: "INSERT",
       },
       {
-        title: "3) Mevcut mesajları getir",
-        description: "Konuşmaya ait tüm DM'ler tarih sırasıyla.",
-        sql: `SELECT *
+        title: "3) Mevcut mesajları yükle",
+        description: "Konuşmaya ait DM'ler kronolojik sırada.",
+        sql: `SELECT id, sender_id, content, created_at
 FROM   direct_messages
 WHERE  conversation_id = :convoId
 ORDER BY created_at ASC;`,
@@ -149,35 +150,35 @@ ORDER BY created_at ASC;`,
   /* -------------------- DM GÖNDER -------------------- */
   "dm-send": {
     title: "Direkt mesaj göndermek",
-    subtitle: "Tek bir INSERT + konuşmanın son güncel zamanı",
+    subtitle: "INSERT + konuşma zamanı güncelleme, tek transaction",
     tables: ["direct_messages", "conversations"],
     target: "dm-input",
     steps: [
       {
         title: "1) Mesajı kaydet",
-        description: "Her mesaj kendi cuid'sini alır, sender_id auth'tan gelir.",
-        sql: `INSERT INTO direct_messages (id, conversation_id, sender_id, content, created_at)
-VALUES (:cuid, :convoId, :meId, :content, CURRENT_TIMESTAMP);`,
+        description: "sender_id JWT'den gelen oturum kullanıcısı; id kısa cuid.",
+        sql: `INSERT INTO direct_messages (id, conversation_id, sender_id, content)
+VALUES (:cuid, :convoId, :meId, :content);`,
         highlight: "INSERT",
       },
       {
         title: "2) Konuşmanın son mesaj zamanını güncelle",
         description:
-          "Mesaj listemizi `lastMessageAt DESC` ile sıraladığımız için bu alanı taze tutmamız gerek.",
+          "Mesaj listesini last_message_at DESC ile sıraladığımız için bu alan tazelenir. SYSTIMESTAMP Oracle'ın anlık zaman damgasıdır.",
         sql: `UPDATE conversations
-SET    last_message_at = CURRENT_TIMESTAMP
+SET    last_message_at = SYSTIMESTAMP
 WHERE  id = :convoId;`,
         highlight: "UPDATE",
       },
       {
-        title: "3) İki sorgu tek transaction içinde",
+        title: "3) İki ifade tek transaction",
         description:
-          "Prisma `$transaction([..., ...])` — biri başarısız olursa diğeri de geri alınır (ATOMIC).",
-        sql: `BEGIN;
-  INSERT INTO direct_messages ...;
-  UPDATE conversations SET last_message_at = ... WHERE id = ...;
+          "node-oracledb autoCommit kapalı; her iki ifade conn.commit() ile birlikte kalıcı olur, hata olursa rollback edilir (atomic).",
+        sql: `-- conn.autoCommit = false
+INSERT INTO direct_messages ...;
+UPDATE conversations SET last_message_at = SYSTIMESTAMP WHERE id = :convoId;
 COMMIT;`,
-        highlight: "BEGIN/COMMIT",
+        highlight: "COMMIT",
       },
     ],
   },
@@ -185,33 +186,33 @@ COMMIT;`,
   /* -------------------- FEED -------------------- */
   feed: {
     title: "Akışı (feed) hazırlamak",
-    subtitle: "Aktif ilanlar, sahip + kaynak + favori durumu tek sorguda",
+    subtitle: "Aktif ilanlar + sahip + kaynak + favori, tek sorgu",
     tables: ["posts", "users", "resources", "favorites"],
     target: "feed",
     steps: [
       {
-        title: "Tüm aktif ilanları sırala",
+        title: "Aktif ilanları sırala ve sınırla",
         description:
-          "INDEX(status) ve INDEX(owner_id) seed'de tanımlı; sıralama created_at DESC.",
-        sql: `SELECT  p.*, u.username, u.avatar_name,
-        ofr.title AS offer_title, req.title AS request_title
+          "IX_POSTS_STATUS ve IX_POSTS_CREATED indeksleri devrede; FETCH FIRST n ROWS ONLY Oracle'ın LIMIT karşılığıdır.",
+        sql: `SELECT  p.id, p.title, p.status, p.created_at,
+        u.username, u.avatar_name,
+        o.title AS offer_title, r.title AS request_title
 FROM    posts p
-JOIN    users u       ON u.id  = p.owner_id
-JOIN    resources ofr ON ofr.id = p.offer_id
-JOIN    resources req ON req.id = p.request_id
+JOIN    users u     ON u.id = p.owner_id
+JOIN    resources o ON o.id = p.offer_id
+JOIN    resources r ON r.id = p.request_id
 WHERE   p.status = 'ACTIVE'
 ORDER BY p.created_at DESC
-LIMIT 60;`,
-        highlight: "ORDER BY",
+FETCH FIRST 30 ROWS ONLY;`,
+        highlight: "FETCH FIRST",
       },
       {
-        title: "Hangileri benim favorimde?",
+        title: "Popüler sıralama (alternatif)",
         description:
-          "Prisma'da `favorites: { where: { userId: me.id } }` ile aynı sorguda toplu çekiliyor.",
-        sql: `SELECT post_id
-FROM   favorites
-WHERE  user_id = :meId
-  AND  post_id IN (:postIdList);`,
+          "sort=popular iken teklif sayısına göre sıralanır — korelasyonlu alt sorgu.",
+        sql: `ORDER BY (SELECT COUNT(*) FROM exchanges e
+          WHERE e.post_id = p.id) DESC,
+         p.created_at DESC`,
       },
     ],
   },
@@ -219,33 +220,67 @@ WHERE  user_id = :meId
   /* -------------------- TAKAS TEKLİFİ -------------------- */
   "exchange-request": {
     title: "Takas teklifi göndermek",
-    subtitle: "Aynı kişi aynı posta birden fazla teklif gönderemez (unique)",
+    subtitle: "UNIQUE(post_id, requester_id) çift teklifi engeller",
     tables: ["exchanges", "posts"],
     target: "post-card",
     steps: [
       {
-        title: "1) İlan benim mi? (kendi ilanına teklif yasak)",
-        description: "İlk olarak sahibi kontrol ediyoruz.",
-        sql: `SELECT owner_id
+        title: "1) İlan sahibi kim?",
+        description: "Kendi ilanına teklif engellemek için önce owner okunur.",
+        sql: `SELECT owner_id, status
 FROM   posts
 WHERE  id = :postId;`,
       },
       {
-        title: "2) Mevcut teklif var mı?",
-        description: "UNIQUE(post_id, requester_id) constraint'i ihlal etmemek için.",
+        title: "2) Daha önce teklif vermiş miyim?",
+        description:
+          "UNIQUE(post_id, requester_id) constraint'ini ihlal etmemek için kontrol.",
         sql: `SELECT id, status
 FROM   exchanges
 WHERE  post_id = :postId
   AND  requester_id = :meId;`,
       },
       {
-        title: "3) Yeni teklifi oluştur",
-        description: "Default status = 'PENDING'.",
-        sql: `INSERT INTO exchanges
-  (id, post_id, requester_id, status, created_at, updated_at)
-VALUES
-  (:cuid, :postId, :meId, 'PENDING', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);`,
+        title: "3) Yeni teklif oluştur",
+        description: "Varsayılan status 'PENDING' (CHECK constraint ile sınırlı).",
+        sql: `INSERT INTO exchanges (id, post_id, requester_id, status)
+VALUES (:cuid, :postId, :meId, 'PENDING');`,
         highlight: "INSERT",
+      },
+    ],
+  },
+
+  /* -------------------- TEKLİF KABUL -------------------- */
+  "exchange-accept": {
+    title: "Takas teklifini kabul etmek",
+    subtitle: "Üç UPDATE tek transaction — diğer teklifler reddedilir",
+    tables: ["exchanges", "posts"],
+    target: "post-card",
+    steps: [
+      {
+        title: "1) Teklifi onayla",
+        description: "Sadece PENDING durumundaki teklif kabul edilebilir.",
+        sql: `UPDATE exchanges
+SET    status = 'ACCEPTED', updated_at = SYSTIMESTAMP
+WHERE  id = :exchangeId;`,
+        highlight: "UPDATE",
+      },
+      {
+        title: "2) İlanı rezerve et",
+        description: "Post artık başka teklif almasın diye RESERVED olur.",
+        sql: `UPDATE posts
+SET    status = 'RESERVED', updated_at = SYSTIMESTAMP
+WHERE  id = :postId;`,
+      },
+      {
+        title: "3) Aynı ilandaki diğer teklifleri reddet",
+        description: "Tek takas kuralı — kalan PENDING teklifler topluca REJECTED.",
+        sql: `UPDATE exchanges
+SET    status = 'REJECTED', updated_at = SYSTIMESTAMP
+WHERE  post_id = :postId
+  AND  status = 'PENDING'
+  AND  id <> :exchangeId;`,
+        highlight: "UPDATE",
       },
     ],
   },

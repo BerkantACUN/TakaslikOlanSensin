@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
+import { favorites, posts } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(
@@ -10,7 +10,7 @@ export async function POST(
   if (!me) return NextResponse.json({ error: "Giriş gerekli" }, { status: 401 });
 
   const { postId } = await params;
-  const post = await prisma.post.findUnique({ where: { id: postId } });
+  const post = await posts.findById(postId, { id: me.id });
   if (!post) return NextResponse.json({ error: "Bulunamadı" }, { status: 404 });
   if (post.ownerId === me.id) {
     return NextResponse.json(
@@ -18,13 +18,7 @@ export async function POST(
       { status: 400 },
     );
   }
-
-  await prisma.favorite.upsert({
-    where: { userId_postId: { userId: me.id, postId } },
-    update: {},
-    create: { userId: me.id, postId },
-  });
-
+  await favorites.add(me.id, postId);
   return NextResponse.json({ ok: true });
 }
 
@@ -36,9 +30,6 @@ export async function DELETE(
   if (!me) return NextResponse.json({ error: "Giriş gerekli" }, { status: 401 });
 
   const { postId } = await params;
-  await prisma.favorite
-    .delete({ where: { userId_postId: { userId: me.id, postId } } })
-    .catch(() => null);
-
+  await favorites.remove(me.id, postId);
   return NextResponse.json({ ok: true });
 }

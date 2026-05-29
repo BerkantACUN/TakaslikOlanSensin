@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { exchanges } from "@/lib/repo";
 import { requireUser } from "@/lib/auth";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
@@ -19,32 +19,15 @@ export default async function ExchangeDetail({
   const me = await requireUser();
   const { id } = await params;
 
-  const exchange = await prisma.exchange.findUnique({
-    where: { id },
-    include: {
-      post: {
-        include: {
-          owner: { select: { id: true, username: true, avatarName: true } },
-          offer: { select: { title: true, type: true } },
-          request: { select: { title: true, type: true } },
-        },
-      },
-      requester: {
-        select: { id: true, username: true, avatarName: true },
-      },
-      messages: { orderBy: { messageNo: "asc" } },
-      reviews: { where: { reviewerId: me.id } },
-    },
-  });
-
+  const exchange = await exchanges.findById(id);
   if (!exchange) return notFound();
 
   const isOwner = exchange.post.ownerId === me.id;
   const isRequester = exchange.requesterId === me.id;
   if (!isOwner && !isRequester) return notFound();
 
+  const myReviewed = await exchanges.myReviewExists(id, me.id);
   const other = isOwner ? exchange.requester : exchange.post.owner;
-  const myReviewed = exchange.reviews.length > 0;
 
   return (
     <div className="page-container py-8 md:py-10 max-w-5xl">
@@ -52,11 +35,9 @@ export default async function ExchangeDetail({
         href="/exchanges"
         className="inline-flex items-center gap-2 text-[13px] font-semibold text-[var(--color-slate)] hover:text-[var(--color-carbon)] mb-4"
       >
-        <Icon.ArrowLeft size={14} />
-        Takaslarım
+        <Icon.ArrowLeft size={14} /> Takaslarım
       </Link>
 
-      {/* Üst kart */}
       <div className="bg-white border border-[var(--color-mist)] rounded-[20px] p-6 mb-6">
         <div className="flex flex-wrap items-start gap-4 justify-between">
           <div className="flex items-center gap-4 min-w-0">
@@ -96,7 +77,10 @@ export default async function ExchangeDetail({
             </p>
             <p className="text-[14px]">
               <span className="font-semibold">{exchange.post.offer.title}</span>{" "}
-              <Icon.ArrowRight size={14} className="inline mx-1 align-middle text-[var(--color-brand-600)]" />{" "}
+              <Icon.ArrowRight
+                size={14}
+                className="inline mx-1 align-middle text-[var(--color-brand-600)]"
+              />{" "}
               <span className="text-[var(--color-slate)]">
                 {exchange.post.request.title}
               </span>
@@ -120,20 +104,19 @@ export default async function ExchangeDetail({
         </div>
       </div>
 
-      {/* Chat */}
       <ExchangeChat
         exchangeId={exchange.id}
-        me={{ id: me.id, username: me.username, avatarName: me.avatarName ?? null }}
-        other={{
-          id: other.id,
-          username: other.username,
-          avatarName: other.avatarName,
+        me={{
+          id: me.id,
+          username: me.username,
+          avatarName: me.avatarName ?? null,
         }}
-        initial={exchange.messages.map((m: any) => ({
+        other={other}
+        initial={exchange.messages.map((m) => ({
           messageNo: m.messageNo,
           senderId: m.senderId,
           content: m.content,
-          createdAt: m.createdAt,
+          createdAt: m.createdAt as any,
         }))}
         canChat={["ACCEPTED", "COMPLETED"].includes(exchange.status)}
       />
