@@ -7,10 +7,11 @@ import { Icon } from "@/components/ui/Icon";
 export const dynamic = "force-dynamic";
 
 async function getData(userId: string | null) {
-  const [feed, depts, counts] = await Promise.all([
+  const [feed, depts, counts, byDept] = await Promise.all([
     posts.list(userId ? { id: userId } : null, { limit: 30, sort: "new" }),
     departments.list(),
     stats.counts(),
+    stats.byDepartment(6),
   ]);
 
   const feedData: FeedPostData[] = feed.map((p) => ({
@@ -32,7 +33,12 @@ async function getData(userId: string | null) {
     authed: !!userId,
   }));
 
-  return { feed: feedData, departments: depts.slice(0, 6), stats: counts };
+  return {
+    feed: feedData,
+    departments: depts.slice(0, 6),
+    stats: counts,
+    byDept,
+  };
 }
 
 export default async function HomePage() {
@@ -122,6 +128,60 @@ export default async function HomePage() {
                 <StatRow label="Öğrenci" value={data.stats.users} />
                 <StatRow label="Tamamlanan takas" value={data.stats.completed} />
               </div>
+            </div>
+
+            <div
+              data-edu="dept-stats"
+              className="bg-white border border-[var(--color-mist)] rounded-[20px] p-5"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold text-[15px]">Bölüm dağılımı</h3>
+                <span className="text-[10px] uppercase tracking-wider font-mono font-bold text-[var(--color-brand-600)]">
+                  GROUP BY
+                </span>
+              </div>
+              {data.byDept.length === 0 ? (
+                <p className="text-[12px] text-[var(--color-slate)]">
+                  Henüz veri yok.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {data.byDept.map((d) => {
+                    const max = Math.max(
+                      ...data.byDept.map((x) => x.postCount),
+                      1,
+                    );
+                    const pct = Math.round((d.postCount / max) * 100);
+                    return (
+                      <li
+                        key={d.departmentId}
+                        className="text-[12px]"
+                      >
+                        <div className="flex items-baseline justify-between gap-2">
+                          <Link
+                            href={`/posts?department=${d.departmentId}`}
+                            className="font-semibold truncate hover:underline"
+                          >
+                            {d.departmentName}
+                          </Link>
+                          <span className="text-[var(--color-slate)] shrink-0">
+                            <span className="font-bold text-[var(--color-carbon)]">
+                              {d.postCount}
+                            </span>{" "}
+                            ilan · {d.userCount} öğrenci
+                          </span>
+                        </div>
+                        <div className="mt-1 h-1.5 bg-[var(--color-mist)] rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-[var(--color-brand-400)] to-[var(--color-brand-600)] rounded-full transition-all"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
 
             <div className="bg-gradient-to-br from-[var(--color-brand-50)] to-white border border-[var(--color-brand-100)] rounded-[20px] p-5">

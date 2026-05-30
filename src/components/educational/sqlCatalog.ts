@@ -250,6 +250,83 @@ VALUES (:cuid, :postId, :meId, 'PENDING');`,
     ],
   },
 
+  /* -------------------- BÖLÜM DAĞILIMI (GROUP BY) -------------------- */
+  "dept-stats": {
+    title: "Bölüm dağılımı — GROUP BY agregasyonu",
+    subtitle: "Her bölümün ilan ve kullanıcı sayısı, tek sorguda",
+    tables: ["departments", "users", "posts"],
+    target: "dept-stats",
+    steps: [
+      {
+        title: "GROUP BY ile agregasyon",
+        description:
+          "departments ile users ve aktif posts LEFT JOIN'lenir, sonra her bölüm için DISTINCT post/user sayıları hesaplanır. Bölümleri post sayısına göre azalan sıralarız.",
+        sql: `SELECT  d.id,
+        d.name,
+        d.faculty,
+        COUNT(DISTINCT p.id) AS post_count,
+        COUNT(DISTINCT u.id) AS user_count
+FROM    departments d
+LEFT JOIN users u ON u.department_id = d.id
+LEFT JOIN posts p ON p.owner_id = u.id AND p.status = 'ACTIVE'
+GROUP BY d.id, d.name, d.faculty
+ORDER BY post_count DESC, user_count DESC
+FETCH FIRST 6 ROWS ONLY;`,
+        highlight: "GROUP BY",
+      },
+      {
+        title: "Neden DISTINCT?",
+        description:
+          "Bir kullanıcı birden çok ilana sahipse, JOIN sonucu users tablosu o kullanıcının id'sini her ilan kadar tekrarlar. DISTINCT olmadan COUNT(u.id) gerçek sayıdan yüksek çıkar.",
+        sql: `-- Yanlış (kullanıcılar tekrarlanır):
+COUNT(u.id)
+
+-- Doğru (her kullanıcı bir kez sayılır):
+COUNT(DISTINCT u.id)`,
+        highlight: "DISTINCT",
+      },
+    ],
+  },
+
+  /* -------------------- HESAP SİLME -------------------- */
+  "delete-account": {
+    title: "Hesabı kalıcı olarak silmek",
+    subtitle: "Tek DELETE — FK cascade ile tüm bağlı veriler temizlenir",
+    tables: ["users", "posts", "favorites", "exchanges", "direct_messages"],
+    target: "delete-account",
+    steps: [
+      {
+        title: "1) Kullanıcı kaydını sil",
+        description:
+          "Tek bir DELETE ifadesi yeterli. Şemadaki tüm FK'ler `ON DELETE CASCADE` ile tanımlandığı için Oracle otomatik olarak bu kullanıcıya bağlı tüm satırları temizler.",
+        sql: `DELETE FROM users
+WHERE  id = :meId;`,
+        highlight: "DELETE",
+      },
+      {
+        title: "2) Cascade ile silinen bağımlı kayıtlar",
+        description:
+          "Aşağıdaki FK'ler kullanıcı silindiğinde tetiklenir; bu satırlar manuel silinmez, Oracle constraint motoru yapar.",
+        sql: `-- posts (owner_id)               -> CASCADE
+-- favorites (user_id, post_id)  -> CASCADE
+-- exchanges (requester_id)      -> CASCADE
+-- exchange_messages (sender_id) -> CASCADE
+-- direct_messages (sender_id)   -> CASCADE
+-- conversations (user_a/b_id)   -> CASCADE
+-- reviews (reviewer, reviewee)  -> CASCADE
+-- user_skills (user_id)         -> CASCADE
+-- reports (reporter_id)         -> CASCADE
+-- reports (reported_user_id)    -> SET NULL`,
+      },
+      {
+        title: "3) Oturumu sonlandır",
+        description:
+          "Uygulama katmanı httpOnly cookie'yi temizler; istemci tarafında ana sayfaya yönlenir.",
+        sql: `-- SQL değil, Next.js: cookies().delete('campusswap_token')`,
+      },
+    ],
+  },
+
   /* -------------------- TEKLİF KABUL -------------------- */
   "exchange-accept": {
     title: "Takas teklifini kabul etmek",

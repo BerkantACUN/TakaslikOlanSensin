@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { users } from "@/lib/repo";
-import { getCurrentUser } from "@/lib/auth";
+import { clearAuthCookie, getCurrentUser } from "@/lib/auth";
 
 const schema = z.object({
   avatarName: z.string().max(60).optional().nullable(),
@@ -27,5 +27,17 @@ export async function PATCH(req: Request) {
     skills: parsed.data.skills,
   });
 
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(): Promise<NextResponse> {
+  const me = await getCurrentUser();
+  if (!me) return NextResponse.json({ error: "Giriş gerekli" }, { status: 401 });
+
+  const ok = await users.deleteAccount(me.id);
+  if (!ok) {
+    return NextResponse.json({ error: "Hesap silinemedi" }, { status: 500 });
+  }
+  await clearAuthCookie();
   return NextResponse.json({ ok: true });
 }

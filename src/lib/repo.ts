@@ -273,6 +273,16 @@ export const users = {
       reviewer: { username: r.REV_USERNAME, avatarName: r.REV_AVATAR ?? null },
     }));
   },
+
+  /**
+   * Hesabı kalıcı olarak sil. FK ON DELETE CASCADE sayesinde
+   * kullanıcıya bağlı tüm post/exchange/dm/review/favorite kayıtları
+   * Oracle tarafından otomatik silinir.
+   */
+  async deleteAccount(id: string): Promise<boolean> {
+    const n = await execute(`DELETE FROM users WHERE id = :id`, { id });
+    return n > 0;
+  },
 };
 
 /* ============================================================
@@ -1138,6 +1148,14 @@ export const reports = {
 /* ============================================================
    STATS (landing page)
 ============================================================ */
+export interface DepartmentStat {
+  departmentId: string;
+  departmentName: string;
+  faculty: string;
+  postCount: number;
+  userCount: number;
+}
+
 export const stats = {
   async counts(): Promise<{ posts: number; users: number; completed: number }> {
     const r: any = await queryOne(
@@ -1152,5 +1170,33 @@ export const stats = {
       users: Number(r?.USERS_COUNT ?? 0),
       completed: Number(r?.COMPLETED_COUNT ?? 0),
     };
+  },
+
+  /**
+   * Bölüme göre aktif ilan + kullanıcı dağılımı. GROUP BY her bölümün
+   * post ve user sayısını toplar; post sayısına göre azalan sıralanır.
+   */
+  async byDepartment(limit = 8): Promise<DepartmentStat[]> {
+    const rows = await query(
+      `SELECT d.id,
+              d.name,
+              d.faculty,
+              COUNT(DISTINCT p.id) AS post_count,
+              COUNT(DISTINCT u.id) AS user_count
+       FROM   departments d
+       LEFT JOIN users u ON u.department_id = d.id
+       LEFT JOIN posts p ON p.owner_id = u.id AND p.status = 'ACTIVE'
+       GROUP BY d.id, d.name, d.faculty
+       ORDER BY post_count DESC, user_count DESC
+       FETCH FIRST :lim ROWS ONLY`,
+      { lim: limit },
+    );
+    return rows.map((r: any) => ({
+      departmentId: r.ID,
+      departmentName: r.NAME,
+      faculty: r.FACULTY,
+      postCount: Number(r.POST_COUNT ?? 0),
+      userCount: Number(r.USER_COUNT ?? 0),
+    }));
   },
 };

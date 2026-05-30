@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { departments } from "@/lib/repo";
 import { getCurrentUser } from "@/lib/auth";
-import { SettingsForm } from "./SettingsForm";
+import { DangerZone, SettingsForm } from "./SettingsForm";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +29,8 @@ export default async function SettingsPage() {
         }}
         departments={depts}
       />
+
+      <DangerZone />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { Input, Select, Textarea } from "@/components/ui/Input";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
+import { useEducation } from "@/components/educational/EducationalProvider";
 
 type Dept = { id: string; name: string; faculty: string };
 
@@ -135,5 +136,96 @@ export function SettingsForm({
         Kaydet
       </Button>
     </form>
+  );
+}
+
+export function DangerZone(): React.ReactElement {
+  const router = useRouter();
+  const { push } = useToast();
+  const { trigger } = useEducation();
+  const [step, setStep] = useState<"idle" | "confirm">("idle");
+  const [confirmText, setConfirmText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function onDelete(): Promise<void> {
+    if (confirmText !== "SIL") {
+      push({ title: "Onaylamak için SIL yaz", tone: "error" });
+      return;
+    }
+    setBusy(true);
+    try {
+      trigger("delete-account");
+      const res = await fetch("/api/me", { method: "DELETE" });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? "Silme başarısız");
+      }
+      push({ title: "Hesabın silindi", tone: "success" });
+      router.push("/");
+      router.refresh();
+    } catch (e) {
+      push({
+        title: e instanceof Error ? e.message : "Hata",
+        tone: "error",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section
+      data-edu="delete-account"
+      className="mt-10 border border-red-200 bg-red-50/50 rounded-[20px] p-6"
+    >
+      <h3 className="font-semibold text-[15px] text-[var(--color-accent-coral)] mb-1">
+        Tehlikeli bölge
+      </h3>
+      <p className="text-[13px] text-[var(--color-slate)] mb-4 leading-relaxed">
+        Hesabını silersen; ilanların, takas geçmişin, mesajların, favorilerin ve
+        yorumların kalıcı olarak kaldırılır. Bu işlem geri alınamaz.
+      </p>
+
+      {step === "idle" ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setStep("confirm")}
+          className="border-[var(--color-accent-coral)] text-[var(--color-accent-coral)] hover:bg-red-50"
+        >
+          <Icon.X size={16} />
+          Hesabımı sil
+        </Button>
+      ) : (
+        <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end">
+          <Input
+            label='Onaylamak için "SIL" yaz'
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="SIL"
+            className="sm:w-48"
+          />
+          <Button
+            type="button"
+            variant="danger"
+            loading={busy}
+            disabled={confirmText !== "SIL"}
+            onClick={onDelete}
+          >
+            Kalıcı olarak sil
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setStep("idle");
+              setConfirmText("");
+            }}
+          >
+            Vazgeç
+          </Button>
+        </div>
+      )}
+    </section>
   );
 }
