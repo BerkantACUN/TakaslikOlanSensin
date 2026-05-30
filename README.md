@@ -40,6 +40,22 @@ Next.js + **Oracle Database 23ai** + raw SQL ile uçtan uca uygular.
 
 > Gereksinim: **Docker Desktop** + **Node 20+**
 
+### 🚀 Tek tıkla başlat (Windows)
+
+Proje klasöründeki **`CampusSwap.bat`** dosyasına çift tıkla. Otomatik
+sırayla yapar:
+
+1. Docker Desktop kapalıysa açar ve hazır olmasını bekler
+2. Oracle container'ı başlatır (ilk seferde image indirir + schema/seed yükler, ~5-10 dk)
+3. `npm install` (gerekirse) ve `.env` (yoksa) hazırlar
+4. Yeni terminalde `npm run dev` başlatır
+5. Tarayıcıyı `http://localhost:3000`'a açar
+
+Durdurmak için **`CampusSwap-Stop.bat`** — dev sunucusunu kapatır,
+Oracle container'ını durdurur.
+
+### Manuel adımlar
+
 1. **Bağımlılıkları yükle**
 
    ```bash
