@@ -46,7 +46,7 @@ export function RegisterForm({ departments }: { departments: Dept[] }) {
         label="Kullanıcı adı"
         value={form.username}
         onChange={(e) => setForm({ ...form, username: e.target.value })}
-        placeholder="ahmet_emir"
+        placeholder="berkant_acun"
         required
         leftIcon={<Icon.User size={16} />}
       />

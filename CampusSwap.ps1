@@ -34,16 +34,20 @@ function Wait-Docker {
 }
 
 function Wait-OracleReady {
-    Write-Host "      'DATABASE IS READY TO USE' log'u bekleniyor..."
+    # Log pattern'i restart sonrasi yazilmadigi icin GERCEK SQL baglantisi
+    # test ediyoruz. Bu yontem hem ilk acilista hem restart'larda calisir.
+    Write-Host "      sqlplus baglanti testi yapiliyor..."
     $tries = 0
-    while ($tries -lt 40) {
-        $logs = docker logs --tail 30 campusswap-oracle 2>&1 | Out-String
-        if ($logs -match "DATABASE IS READY TO USE") { return $true }
-        if ($tries -gt 0 -and $tries % 4 -eq 0) {
-            Write-Host "      Hala bekleniyor... ($tries/40)"
-        }
+    while ($tries -lt 36) {
         Start-Sleep -Seconds 5
+        $output = docker exec campusswap-oracle bash -c "echo 'exit;' | sqlplus -S -L campus/campus123@//localhost:1521/FREEPDB1" 2>&1
+        if ($LASTEXITCODE -eq 0 -and -not ($output -match "ORA-|ERROR")) {
+            return $true
+        }
         $tries++
+        if ($tries % 3 -eq 0) {
+            Write-Host "      Hala deneniyor... ($tries/36 - ~$($tries*5)sn)"
+        }
     }
     return $false
 }
@@ -93,16 +97,60 @@ try {
     Write-Host "  ===============================================" -ForegroundColor Cyan
 
     # ------------------------------------------------------------
+    # 0) Gereksinim kontrolu (Node, Docker, Git)
+    # ------------------------------------------------------------
+    Write-Step "0/6" "Sistem gereksinimleri kontrol ediliyor..."
+
+    $missing = @()
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        $missing += "Node.js (https://nodejs.org/ - LTS surumu)"
+    }
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        $missing += "Docker Desktop (https://www.docker.com/products/docker-desktop/)"
+    }
+    $hasGit = $null -ne (Get-Command git -ErrorAction SilentlyContinue)
+    if (-not $hasGit) {
+        Write-Host "      [UYARI] Git bulunamadi - guncellemeler atlanacak." -ForegroundColor Yellow
+    }
+    if ($missing.Count -gt 0) {
+        Write-Host "      HATA: Eksik yazilimlar var:" -ForegroundColor Red
+        foreach ($m in $missing) { Write-Host "        - $m" -ForegroundColor Red }
+        Write-Host ""
+        Write-Host "      Lutfen yukleyip tekrar deneyin."
+        Read-Host "Cikis icin Enter'a basin"
+        return
+    }
+    Write-Host "      [OK] Node $(node -v), Docker bulundu." -ForegroundColor Green
+
+    # ------------------------------------------------------------
+    # 0.5) Git pull (proje guncel kalsin)
+    # ------------------------------------------------------------
+    if ($hasGit -and (Test-Path ".git")) {
+        Write-Host "      Proje guncelleniyor (git pull)..."
+        git pull --quiet 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "      [OK] Proje guncel." -ForegroundColor Green
+        } else {
+            Write-Host "      [UYARI] Git pull basarisiz - mevcut surumle devam." -ForegroundColor Yellow
+        }
+    }
+
+    # ------------------------------------------------------------
     # 1) Docker Desktop
     # ------------------------------------------------------------
-    Write-Step "1/5" "Docker Desktop kontrol ediliyor..."
+    Write-Step "1/6" "Docker Desktop kontrol ediliyor..."
     docker ps 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Host "      Docker daemon kapali, Docker Desktop aciliyor..."
-        $dockerExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-        if (-not (Test-Path $dockerExe)) {
-            Write-Host "      HATA: Docker Desktop bulunamadi. Yukleyin:" -ForegroundColor Red
-            Write-Host "      https://www.docker.com/products/docker-desktop/"
+        $candidates = @(
+            "C:\Program Files\Docker\Docker\Docker Desktop.exe",
+            "$env:LOCALAPPDATA\Docker\Docker Desktop.exe",
+            "$env:ProgramFiles\Docker\Docker\Docker Desktop.exe"
+        )
+        $dockerExe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $dockerExe) {
+            Write-Host "      HATA: Docker Desktop binary bulunamadi." -ForegroundColor Red
+            Write-Host "      Indirin: https://www.docker.com/products/docker-desktop/"
             Read-Host "Cikis icin Enter'a basin"
             return
         }
@@ -118,7 +166,7 @@ try {
     # ------------------------------------------------------------
     # 2) Oracle container
     # ------------------------------------------------------------
-    Write-Step "2/5" "Oracle container kontrol ediliyor..."
+    Write-Step "2/6" "Oracle container kontrol ediliyor..."
     $existing = docker ps -a --format "{{.Names}}" 2>$null | Select-String -SimpleMatch "campusswap-oracle"
     $firstRun = $false
     if (-not $existing) {
@@ -144,7 +192,7 @@ try {
     # ------------------------------------------------------------
     # 3) DB hazir
     # ------------------------------------------------------------
-    Write-Step "3/5" "Oracle veritabani hazir olana kadar bekleniyor..."
+    Write-Step "3/6" "Oracle veritabani hazir olana kadar bekleniyor..."
     if (-not (Wait-OracleReady)) {
         Write-Host "      HATA: Oracle 3 dk icinde acilmadi." -ForegroundColor Red
         Read-Host "Enter"
@@ -156,24 +204,24 @@ try {
     # 4) Bagimliliklar + ilk kurulumda schema/seed
     # ------------------------------------------------------------
     if (-not (Test-Path "node_modules")) {
-        Write-Step "4/5" "node_modules yok, npm install..."
+        Write-Step "4/6" "node_modules yok, npm install..."
         npm install --legacy-peer-deps --no-fund --no-audit
     }
     if (-not (Test-Path ".env")) {
         Copy-Item ".env.example" ".env"
     }
     if ($firstRun) {
-        Write-Step "4/5" "Ilk kurulum: schema + seed yukleniyor..."
+        Write-Step "4/6" "Ilk kurulum: schema + seed yukleniyor..."
         npm run db:setup
         Write-Host "      [OK] Schema + demo veri yuklendi." -ForegroundColor Green
     } else {
-        Write-Step "4/5" "Mevcut veritabani kullaniliyor."
+        Write-Step "4/6" "Mevcut veritabani kullaniliyor."
     }
 
     # ------------------------------------------------------------
     # 5) Tarayici (gecikmeli) + dev sunucusu (on planda)
     # ------------------------------------------------------------
-    Write-Step "5/5" "Next.js dev sunucusu baslatiliyor..."
+    Write-Step "5/6" "Next.js dev sunucusu baslatiliyor..."
 
     # 12 sn sonra tarayiciyi ac
     Start-Job -ScriptBlock {

@@ -4,9 +4,10 @@
 > Kitap, ders notu, çıkmış sınav ve proje kaynaklarını kampüs içinde
 > güvenle değiş tokuş et.
 
-Bu proje Grup 13'ün **Veritabanı Yönetim Sistemleri** dersi
-projesidir. ER diyagramında modellenen CampusSwap sistemini
-Next.js + **Oracle Database 23ai** + raw SQL ile uçtan uca uygular.
+**Berkant Acun** ve **Elif Doğa Tarhana** tarafından geliştirilen
+**Veritabanı Yönetim Sistemleri** dersi projesidir. ER diyagramında
+modellenen CampusSwap sistemini Next.js + **Oracle Database 23ai** +
+raw SQL ile uçtan uca uygular.
 
 ## Özellikler
 
@@ -116,7 +117,6 @@ PowerShell aç ve şunu çalıştır:
 |---------|-------|
 | elif@example.com | test1234 |
 | berkant@example.com | test1234 |
-| ugur@example.com | test1234 |
 
 ## Komutlar
 
@@ -214,5 +214,4 @@ o aksiyonun arkasındaki **gerçek Oracle SQL** adım adım gösterilir:
 
 Eğitim amaçlı proje. Grup 13 / VYS dersi.
 
-— **Grup üyeleri**: Elif Doğa Tarhana · Berkant Acun · Uğur Pehlivan
-· Melih Kaan Beşir · Ahmet Emir Civelek
+— **Geliştiriciler**: Berkant Acun · Elif Doğa Tarhana

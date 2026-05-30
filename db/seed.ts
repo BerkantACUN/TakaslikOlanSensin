@@ -48,18 +48,10 @@ async function main() {
       [
         "user_berk01",
         "berkant@example.com",
-        "berkant",
+        "berkant_acun",
         "Berkant Acun",
         "Yazılım Mühendisliği — algoritma kitaplarımı paylaşmaktan keyif alıyorum.",
         "dept_cs01",
-      ],
-      [
-        "user_ugur01",
-        "ugur@example.com",
-        "ugur_p",
-        "Uğur Pehlivan",
-        "EE öğrencisiyim, devre ve sinyal işleme kaynaklarım var.",
-        "dept_ee01",
       ],
     ];
     for (const [id, email, username, avatar_name, bio, department_id] of users) {
@@ -85,8 +77,7 @@ async function main() {
       ["user_elif01", "Matematik"],
       ["user_berk01", "React"],
       ["user_berk01", "Algoritma"],
-      ["user_ugur01", "MATLAB"],
-      ["user_ugur01", "Sinyal İşleme"],
+      ["user_berk01", "Next.js"],
     ];
     for (const [user_id, skill] of skills) {
       await execNoQuery(
@@ -148,18 +139,18 @@ async function main() {
       ],
       [
         "post_berk_01",
-        "Lineer Cebir PDF'i takas — herhangi bir EE kitabı",
-        "PDF tamamen taranmış halde, mail ile paylaşırım. Karşılığında EE temel kitaplarından birini arıyorum.",
+        "Lineer Cebir PDF'i takas — Signals & Systems karşılığında",
+        "PDF tamamen taranmış halde, mail ile paylaşırım. Karşılığında Oppenheim Signals & Systems kitabını arıyorum.",
         "user_berk01",
         "res_linalg",
         "res_signals",
       ],
       [
-        "post_ugur_01",
-        "Signals & Systems vs Calculus",
-        "EE 2. sınıfım, Stewart Calculus arıyorum.",
-        "user_ugur01",
-        "res_signals",
+        "post_berk_02",
+        "Algoritma vize sorularımı, Calculus kitabıyla takas ederim",
+        "Son 5 yılın çözümlü vize sorularımı paylaşırım. Karşılığında Stewart Calculus 8. baskısı arıyorum.",
+        "user_berk01",
+        "res_algoex",
         "res_stewart",
       ],
     ];

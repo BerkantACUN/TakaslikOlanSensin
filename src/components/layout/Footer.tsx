@@ -42,7 +42,7 @@ export function Footer() {
       <div className="border-t border-[var(--color-mist)]">
         <div className="page-container py-5 text-[12px] text-[var(--color-slate)] flex flex-col sm:flex-row items-center justify-between gap-2">
           <p>© {new Date().getFullYear()} CampusSwap — Akademik kaynak takası</p>
-          <p>Grup 13 · Veritabanı Yönetim Sistemleri Projesi</p>
+          <p>Berkant Acun &amp; Elif Doğa Tarhana · VYS Projesi</p>
         </div>
       </div>
     </footer>

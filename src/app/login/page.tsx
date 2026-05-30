@@ -95,7 +95,7 @@ export default function LoginPage() {
           <div className="mt-10 p-4 rounded-[14px] bg-[var(--color-fog)] border border-[var(--color-mist)]">
             <p className="text-[12px] font-semibold mb-1">Demo hesaplar</p>
             <p className="text-[12px] text-[var(--color-slate)]">
-              elif@example.com · berkant@example.com · ugur@example.com
+              berkant@example.com · elif@example.com
               <br />
               Şifre: <span className="font-mono">test1234</span>
             </p>
