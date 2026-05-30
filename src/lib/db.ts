@@ -18,15 +18,13 @@ function getPool(): Pool {
         "DATABASE_URL .env içinde tanımlı olmalı (Supabase connection string).",
       );
     }
-    // Supabase Transaction Pooler (6543) SSL'i kendisi yönetir; pg client
-    // SSL handshake yapmamalı. Direct connection (5432) icin SSL gerek.
-    const isPooler = connectionString.includes("pooler.supabase.com");
+    // Supabase her zaman SSL kabul eder; sertifika doğrulamasını
+    // kapatıyoruz (Supabase self-signed kullanır). PGSSL=false ile
+    // tamamen kapatılabilir (bazı lokal proxy/firewall'lar için).
     globalForPg.pgPool = new Pool({
       connectionString,
       ssl:
-        process.env.PGSSL === "false" || isPooler
-          ? false
-          : { rejectUnauthorized: false },
+        process.env.PGSSL === "false" ? false : { rejectUnauthorized: false },
       max: Number(process.env.PG_POOL_MAX ?? 10),
       idleTimeoutMillis: 30_000,
     });
