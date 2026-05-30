@@ -7,12 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:up": "docker start campusswap-oracle || docker run -d --name campusswap-oracle -p 1521:1521 -e ORACLE_PASSWORD=campusswap123 -e APP_USER=campus -e APP_USER_PASSWORD=campus123 gvenzl/oracle-free:23-slim-faststart",
-    "db:down": "docker stop campusswap-oracle",
-    "db:reset": "docker cp db/schema.sql campusswap-oracle:/tmp/schema.sql && docker exec -i campusswap-oracle sqlplus -S campus/campus123@//localhost:1521/FREEPDB1 @/tmp/schema.sql",
+    "db:reset": "tsx db/run-schema.ts",
     "db:seed": "tsx db/seed.ts",
-    "db:setup": "npm run db:reset && npm run db:seed",
-    "db:cli": "docker exec -it campusswap-oracle sqlplus campus/campus123@//localhost:1521/FREEPDB1"
+    "db:setup": "npm run db:reset && npm run db:seed"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -22,6 +19,7 @@
     "jose": "^5.9.6",
     "next": "15.0.3",
     "oracledb": "^6.10.0",
+    "pg": "^8.21.0",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
     "tailwind-merge": "^2.5.4",
@@ -31,6 +29,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.9.0",
     "@types/oracledb": "^6.10.4",
+    "@types/pg": "^8.20.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "autoprefixer": "^10.5.0",

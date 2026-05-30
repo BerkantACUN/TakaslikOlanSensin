@@ -1,152 +1,116 @@
-import oracledb from "oracledb";
+import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 /* -------------------------------------------------------------------
-   Oracle Connection Pool
-   Tek bir global pool, dev modunda hot-reload sırasında yeniden
-   yaratılmaz. Thin driver kullanır (Oracle Instant Client gerekmez).
+   PostgreSQL Connection Pool (Supabase uyumlu)
+   `pg` paketi ile Pool — Vercel serverless'ta tekrar yaratılmasın diye
+   global cache'leniyor. Dev modunda hot-reload sirasinda da korunur.
 ------------------------------------------------------------------- */
 
-oracledb.outFormat = oracledb.OUT_FORMAT_OBJECT;
-oracledb.fetchAsString = [oracledb.CLOB];
-oracledb.autoCommit = true;
-
-const POOL_ALIAS = "campusswap";
-
-const globalForOracle = globalThis as unknown as {
-  oraclePoolReady?: Promise<oracledb.Pool>;
+const globalForPg = globalThis as unknown as {
+  pgPool?: Pool;
 };
 
-function createPool(): Promise<oracledb.Pool> {
-  const user = process.env.ORACLE_USER;
-  const password = process.env.ORACLE_PASSWORD;
-  const connectString = process.env.ORACLE_CONNECT_STRING;
-  if (!user || !password || !connectString) {
-    throw new Error(
-      "ORACLE_USER / ORACLE_PASSWORD / ORACLE_CONNECT_STRING .env içinde tanımlı olmalı",
-    );
-  }
-  return oracledb.createPool({
-    user,
-    password,
-    connectString,
-    poolAlias: POOL_ALIAS,
-    poolMin: Number(process.env.ORACLE_POOL_MIN ?? 2),
-    poolMax: Number(process.env.ORACLE_POOL_MAX ?? 10),
-    poolIncrement: 1,
-  });
-}
-
-function getPool(): Promise<oracledb.Pool> {
-  if (!globalForOracle.oraclePoolReady) {
-    globalForOracle.oraclePoolReady = createPool();
-  }
-  return globalForOracle.oraclePoolReady;
-}
-
-export async function withConn<T>(
-  fn: (conn: oracledb.Connection) => Promise<T>,
-): Promise<T> {
-  const pool = await getPool();
-  const conn = await pool.getConnection();
-  try {
-    return await fn(conn);
-  } finally {
-    await conn.close();
-  }
-}
-
-export type SqlBinds = Record<string, unknown> | unknown[];
-
-/** Çoklu satır SELECT. Returns row[]. */
-export async function query<T = Record<string, unknown>>(
-  sql: string,
-  binds: SqlBinds = {},
-): Promise<T[]> {
-  return withConn(async (conn) => {
-    const r = await conn.execute<T>(sql, binds as any, {
-      outFormat: oracledb.OUT_FORMAT_OBJECT,
+function getPool(): Pool {
+  if (!globalForPg.pgPool) {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error(
+        "DATABASE_URL .env içinde tanımlı olmalı (Supabase connection string).",
+      );
+    }
+    globalForPg.pgPool = new Pool({
+      connectionString,
+      ssl:
+        process.env.PGSSL === "false"
+          ? false
+          : { rejectUnauthorized: false },
+      max: Number(process.env.PG_POOL_MAX ?? 10),
+      idleTimeoutMillis: 30_000,
     });
-    return (r.rows ?? []) as T[];
-  });
+  }
+  return globalForPg.pgPool;
+}
+
+export type SqlParams = unknown[];
+
+/** Çoklu satır SELECT — küçük harf kolon adlarıyla. */
+export async function query<T extends QueryResultRow = QueryResultRow>(
+  sql: string,
+  params: SqlParams = [],
+): Promise<T[]> {
+  const result = await getPool().query<T>(sql, params);
+  return result.rows;
 }
 
 /** Tek satır veya null. */
-export async function queryOne<T = Record<string, unknown>>(
+export async function queryOne<T extends QueryResultRow = QueryResultRow>(
   sql: string,
-  binds: SqlBinds = {},
+  params: SqlParams = [],
 ): Promise<T | null> {
-  const rows = await query<T>(sql, binds);
+  const rows = await query<T>(sql, params);
   return rows[0] ?? null;
 }
 
-/** INSERT / UPDATE / DELETE — rowsAffected dönüş. */
-export async function execute(sql: string, binds: SqlBinds = {}): Promise<number> {
-  return withConn(async (conn) => {
-    const r = await conn.execute(sql, binds as any);
-    return r.rowsAffected ?? 0;
-  });
+/** INSERT / UPDATE / DELETE — rowCount dönüş. */
+export async function execute(
+  sql: string,
+  params: SqlParams = [],
+): Promise<number> {
+  const result = await getPool().query(sql, params);
+  return result.rowCount ?? 0;
 }
 
-/** Birden fazla sorguyu tek transaction içinde çalıştır. */
-export async function tx<T>(
-  fn: (conn: oracledb.Connection) => Promise<T>,
-): Promise<T> {
-  const pool = await getPool();
-  const conn = await pool.getConnection();
+/** Tek transaction; başarıda COMMIT, hatada ROLLBACK. */
+export async function tx<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await getPool().connect();
   try {
-    // Manuel commit için autoCommit false
-    const result = await fn(conn);
-    await conn.commit();
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
     return result;
   } catch (err) {
     try {
-      await conn.rollback();
+      await client.query("ROLLBACK");
     } catch {
       /* swallow */
     }
     throw err;
   } finally {
-    await conn.close();
+    client.release();
   }
 }
 
-/** Connection üstünde tek satır çalıştır + nesne dön. */
-export async function execOne<T = Record<string, unknown>>(
-  conn: oracledb.Connection,
+/** Transaction client üstünde SELECT (tek satır). */
+export async function execOne<T extends QueryResultRow = QueryResultRow>(
+  client: PoolClient,
   sql: string,
-  binds: SqlBinds = {},
+  params: SqlParams = [],
 ): Promise<T | null> {
-  const r = await conn.execute<T>(sql, binds as any, {
-    outFormat: oracledb.OUT_FORMAT_OBJECT,
-    autoCommit: false,
-  });
-  return (r.rows?.[0] ?? null) as T | null;
+  const r = await client.query<T>(sql, params);
+  return r.rows[0] ?? null;
 }
 
-/** Connection üstünde liste sorgusu. */
-export async function execMany<T = Record<string, unknown>>(
-  conn: oracledb.Connection,
+/** Transaction client üstünde SELECT (liste). */
+export async function execMany<T extends QueryResultRow = QueryResultRow>(
+  client: PoolClient,
   sql: string,
-  binds: SqlBinds = {},
+  params: SqlParams = [],
 ): Promise<T[]> {
-  const r = await conn.execute<T>(sql, binds as any, {
-    outFormat: oracledb.OUT_FORMAT_OBJECT,
-    autoCommit: false,
-  });
-  return (r.rows ?? []) as T[];
+  const r = await client.query<T>(sql, params);
+  return r.rows;
 }
 
-/** Connection üstünde INSERT/UPDATE/DELETE — manuel commit. */
+/** Transaction client üstünde INSERT/UPDATE/DELETE — rowCount. */
 export async function execNoQuery(
-  conn: oracledb.Connection,
+  client: PoolClient,
   sql: string,
-  binds: SqlBinds = {},
+  params: SqlParams = [],
 ): Promise<number> {
-  const r = await conn.execute(sql, binds as any, { autoCommit: false });
-  return r.rowsAffected ?? 0;
+  const r = await client.query(sql, params);
+  return r.rowCount ?? 0;
 }
 
-/** CUID benzeri kısa, sıralı id üreteci (zaman tabanlı + random). */
+/** CUID benzeri kısa, sıralı id üreteci. */
 export function cuid(prefix = ""): string {
   const time = Date.now().toString(36);
   const rand = Math.random().toString(36).slice(2, 10);

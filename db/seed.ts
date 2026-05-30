@@ -1,10 +1,6 @@
 /**
- * Oracle seed — Node tabanlı.
+ * PostgreSQL seed — Node tabanlı.
  * Çalıştır: npm run db:seed
- *
- * bcrypt hash'ini runtime'da üretir (her seferinde farklı tuz),
- * idempotent değildir — schema'yı sıfırlayıp tekrar uygulamak için
- * önce db/schema.sql çalıştırılır.
  */
 import "dotenv/config";
 import bcrypt from "bcryptjs";
@@ -13,7 +9,7 @@ import { tx, execNoQuery } from "../src/lib/db";
 async function main() {
   const passwordHash = await bcrypt.hash("test1234", 10);
 
-  await tx(async (conn) => {
+  await tx(async (client) => {
     console.log("→ Departmanlar...");
     const departments = [
       ["dept_cs01", "Bilgisayar Mühendisliği", "Mühendislik"],
@@ -29,9 +25,9 @@ async function main() {
     ];
     for (const [id, name, faculty] of departments) {
       await execNoQuery(
-        conn,
-        `INSERT INTO departments (id, name, faculty) VALUES (:id, :name, :faculty)`,
-        { id, name, faculty },
+        client,
+        `INSERT INTO departments (id, name, faculty) VALUES ($1, $2, $3)`,
+        [id, name, faculty],
       );
     }
 
@@ -56,18 +52,10 @@ async function main() {
     ];
     for (const [id, email, username, avatar_name, bio, department_id] of users) {
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO users (id, email, username, password_hash, avatar_name, bio, department_id)
-         VALUES (:id, :email, :username, :password_hash, :avatar_name, :bio, :department_id)`,
-        {
-          id,
-          email,
-          username,
-          password_hash: passwordHash,
-          avatar_name,
-          bio,
-          department_id,
-        },
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, email, username, passwordHash, avatar_name, bio, department_id],
       );
     }
 
@@ -81,9 +69,9 @@ async function main() {
     ];
     for (const [user_id, skill] of skills) {
       await execNoQuery(
-        conn,
-        `INSERT INTO user_skills (user_id, skill) VALUES (:user_id, :skill)`,
-        { user_id, skill },
+        client,
+        `INSERT INTO user_skills (user_id, skill) VALUES ($1, $2)`,
+        [user_id, skill],
       );
     }
 
@@ -120,10 +108,10 @@ async function main() {
     ];
     for (const [id, title, type, description, department_id] of resources) {
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO resources (id, title, type, description, department_id)
-         VALUES (:id, :title, :type, :description, :department_id)`,
-        { id, title, type, description, department_id },
+         VALUES ($1, $2, $3, $4, $5)`,
+        [id, title, type, description, department_id],
       );
     }
 
@@ -156,10 +144,10 @@ async function main() {
     ];
     for (const [id, title, description, owner_id, offer_id, request_id] of posts) {
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO posts (id, title, description, status, owner_id, offer_id, request_id)
-         VALUES (:id, :title, :description, 'ACTIVE', :owner_id, :offer_id, :request_id)`,
-        { id, title, description, owner_id, offer_id, request_id },
+         VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6)`,
+        [id, title, description, owner_id, offer_id, request_id],
       );
     }
   });

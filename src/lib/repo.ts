@@ -1,8 +1,6 @@
 /* -------------------------------------------------------------------
-   Repository katmanı (Oracle raw SQL)
-   Tüm veri erişim tek modülde — eski Prisma çağrılarının yerine geçer.
-   Oracle, kolon adlarını VARSAYILAN olarak büyük harfle döner; her
-   sorgu sonucunu manuel camelCase'e map'liyoruz.
+   Repository katmanı — PostgreSQL (Supabase) raw SQL
+   Postgres kolon adlarını küçük harfle döndürür; $1/$2 positional bind.
 ------------------------------------------------------------------- */
 
 import {
@@ -33,57 +31,57 @@ import type {
 
 function mapDept(r: any): Department | null {
   if (!r) return null;
-  return { id: r.ID, name: r.NAME, faculty: r.FACULTY };
+  return { id: r.id, name: r.name, faculty: r.faculty };
 }
 
 function mapUser(r: any): User | null {
   if (!r) return null;
   return {
-    id: r.ID,
-    username: r.USERNAME,
-    email: r.EMAIL,
-    avatarName: r.AVATAR_NAME ?? null,
-    bio: r.BIO ?? null,
-    departmentId: r.DEPARTMENT_ID ?? null,
-    createdAt: r.CREATED_AT,
+    id: r.id,
+    username: r.username,
+    email: r.email,
+    avatarName: r.avatar_name ?? null,
+    bio: r.bio ?? null,
+    departmentId: r.department_id ?? null,
+    createdAt: r.created_at,
   };
 }
 
 function mapResource(r: any): Resource | null {
   if (!r) return null;
   return {
-    id: r.ID,
-    title: r.TITLE,
-    type: r.TYPE,
-    description: r.DESCRIPTION ?? null,
-    departmentId: r.DEPARTMENT_ID ?? null,
+    id: r.id,
+    title: r.title,
+    type: r.type,
+    description: r.description ?? null,
+    departmentId: r.department_id ?? null,
   };
 }
 
 function mapPost(r: any): Post | null {
   if (!r) return null;
   return {
-    id: r.ID,
-    title: r.TITLE,
-    description: r.DESCRIPTION ?? null,
-    status: r.STATUS,
-    ownerId: r.OWNER_ID,
-    offerId: r.OFFER_ID,
-    requestId: r.REQUEST_ID,
-    createdAt: r.CREATED_AT,
-    updatedAt: r.UPDATED_AT,
+    id: r.id,
+    title: r.title,
+    description: r.description ?? null,
+    status: r.status,
+    ownerId: r.owner_id,
+    offerId: r.offer_id,
+    requestId: r.request_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   };
 }
 
 function mapExchange(r: any): Exchange | null {
   if (!r) return null;
   return {
-    id: r.ID,
-    postId: r.POST_ID,
-    requesterId: r.REQUESTER_ID,
-    status: r.STATUS,
-    createdAt: r.CREATED_AT,
-    updatedAt: r.UPDATED_AT,
+    id: r.id,
+    postId: r.post_id,
+    requesterId: r.requester_id,
+    status: r.status,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   };
 }
 
@@ -92,7 +90,9 @@ function mapExchange(r: any): Exchange | null {
 ============================================================ */
 export const departments = {
   async list(): Promise<Department[]> {
-    const rows = await query("SELECT id, name, faculty FROM departments ORDER BY name");
+    const rows = await query(
+      "SELECT id, name, faculty FROM departments ORDER BY name",
+    );
     return rows.map((r) => mapDept(r)!);
   },
 };
@@ -101,17 +101,16 @@ export const departments = {
    USERS
 ============================================================ */
 export const users = {
-  async findByEmailOrUsername(value: string): Promise<
-    | (User & { passwordHash: string })
-    | null
-  > {
+  async findByEmailOrUsername(
+    value: string,
+  ): Promise<(User & { passwordHash: string }) | null> {
     const r: any = await queryOne(
       `SELECT id, email, username, password_hash, avatar_name, bio, department_id, created_at
-       FROM users WHERE email = :v OR username = :v`,
-      { v: value },
+       FROM users WHERE email = $1 OR username = $1`,
+      [value],
     );
     if (!r) return null;
-    return { ...mapUser(r)!, passwordHash: r.PASSWORD_HASH };
+    return { ...mapUser(r)!, passwordHash: r.password_hash };
   },
 
   async exists(opts: { email?: string; username?: string }): Promise<{
@@ -121,16 +120,15 @@ export const users = {
     if (!opts.email && !opts.username) return null;
     const r: any = await queryOne(
       `SELECT
-         MAX(CASE WHEN email = :e THEN 1 ELSE 0 END) AS same_email,
-         MAX(CASE WHEN username = :u THEN 1 ELSE 0 END) AS same_username
+         BOOL_OR(email = $1)    AS same_email,
+         BOOL_OR(username = $2) AS same_username
        FROM users
-       WHERE email = :e OR username = :u`,
-      { e: opts.email ?? "", u: opts.username ?? "" },
+       WHERE email = $1 OR username = $2`,
+      [opts.email ?? "", opts.username ?? ""],
     );
-    if (!r) return { sameEmail: false, sameUsername: false };
     return {
-      sameEmail: Number(r.SAME_EMAIL ?? 0) === 1,
-      sameUsername: Number(r.SAME_USERNAME ?? 0) === 1,
+      sameEmail: !!r?.same_email,
+      sameUsername: !!r?.same_username,
     };
   },
 
@@ -144,27 +142,27 @@ export const users = {
     const id = cuid("user_");
     await execute(
       `INSERT INTO users (id, email, username, password_hash, avatar_name, department_id)
-       VALUES (:id, :email, :username, :password_hash, :avatar_name, :department_id)`,
-      {
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
         id,
-        email: data.email,
-        username: data.username,
-        password_hash: data.passwordHash,
-        avatar_name: data.avatarName ?? data.username,
-        department_id: data.departmentId ?? null,
-      },
+        data.email,
+        data.username,
+        data.passwordHash,
+        data.avatarName ?? data.username,
+        data.departmentId ?? null,
+      ],
     );
-    const created = await users.findById(id);
-    return created!;
+    return (await users.findById(id))!;
   },
 
   async findById(id: string): Promise<User | null> {
-    const r = await queryOne(
-      `SELECT id, email, username, avatar_name, bio, department_id, created_at
-       FROM users WHERE id = :id`,
-      { id },
+    return mapUser(
+      await queryOne(
+        `SELECT id, email, username, avatar_name, bio, department_id, created_at
+         FROM users WHERE id = $1`,
+        [id],
+      ),
     );
-    return mapUser(r);
   },
 
   async findDetailed(id: string): Promise<UserDetailed | null> {
@@ -173,20 +171,20 @@ export const users = {
               d.id AS d_id, d.name AS d_name, d.faculty AS d_faculty
        FROM users u
        LEFT JOIN departments d ON d.id = u.department_id
-       WHERE u.id = :id`,
-      { id },
+       WHERE u.id = $1`,
+      [id],
     );
     if (!u) return null;
     const skillsRows = await query(
-      `SELECT skill FROM user_skills WHERE user_id = :id ORDER BY skill`,
-      { id },
+      `SELECT skill FROM user_skills WHERE user_id = $1 ORDER BY skill`,
+      [id],
     );
     return {
       ...mapUser(u)!,
-      department: u.D_ID
-        ? { id: u.D_ID, name: u.D_NAME, faculty: u.D_FACULTY }
+      department: u.d_id
+        ? { id: u.d_id, name: u.d_name, faculty: u.d_faculty }
         : null,
-      skills: skillsRows.map((s: any) => s.SKILL),
+      skills: skillsRows.map((s: any) => s.skill),
     };
   },
 
@@ -199,33 +197,30 @@ export const users = {
       skills?: string[];
     },
   ): Promise<void> {
-    await tx(async (conn) => {
+    await tx(async (client) => {
       await execNoQuery(
-        conn,
+        client,
         `UPDATE users
-         SET avatar_name = :avatar_name,
-             bio = :bio,
-             department_id = :department_id,
-             updated_at = SYSTIMESTAMP
-         WHERE id = :id`,
-        {
+         SET avatar_name = $1, bio = $2, department_id = $3, updated_at = NOW()
+         WHERE id = $4`,
+        [
+          data.avatarName ?? null,
+          data.bio ?? null,
+          data.departmentId ?? null,
           id,
-          avatar_name: data.avatarName ?? null,
-          bio: data.bio ?? null,
-          department_id: data.departmentId ?? null,
-        },
+        ],
       );
       if (Array.isArray(data.skills)) {
         await execNoQuery(
-          conn,
-          `DELETE FROM user_skills WHERE user_id = :id`,
-          { id },
+          client,
+          `DELETE FROM user_skills WHERE user_id = $1`,
+          [id],
         );
         for (const s of data.skills) {
           await execNoQuery(
-            conn,
-            `INSERT INTO user_skills (user_id, skill) VALUES (:id, :s)`,
-            { id, s },
+            client,
+            `INSERT INTO user_skills (user_id, skill) VALUES ($1, $2)`,
+            [id, s],
           );
         }
       }
@@ -236,17 +231,20 @@ export const users = {
     userId: string,
   ): Promise<{ avg: number | null; count: number }> {
     const r: any = await queryOne(
-      `SELECT AVG(rating) AS avg_rating, COUNT(*) AS cnt
-       FROM reviews WHERE reviewee_id = :id`,
-      { id: userId },
+      `SELECT AVG(rating)::float AS avg_rating, COUNT(*) AS cnt
+       FROM reviews WHERE reviewee_id = $1`,
+      [userId],
     );
     return {
-      avg: r?.AVG_RATING != null ? Number(r.AVG_RATING) : null,
-      count: Number(r?.CNT ?? 0),
+      avg: r?.avg_rating != null ? Number(r.avg_rating) : null,
+      count: Number(r?.cnt ?? 0),
     };
   },
 
-  async reviewsReceived(userId: string, limit = 8): Promise<
+  async reviewsReceived(
+    userId: string,
+    limit = 8,
+  ): Promise<
     Array<
       Review & {
         reviewer: { username: string; avatarName: string | null };
@@ -257,30 +255,25 @@ export const users = {
       `SELECT r.*, u.username AS rev_username, u.avatar_name AS rev_avatar
        FROM reviews r
        JOIN users u ON u.id = r.reviewer_id
-       WHERE r.reviewee_id = :id
+       WHERE r.reviewee_id = $1
        ORDER BY r.created_at DESC
-       FETCH FIRST :lim ROWS ONLY`,
-      { id: userId, lim: limit },
+       LIMIT $2`,
+      [userId, limit],
     );
     return rows.map((r: any) => ({
-      id: r.ID,
-      exchangeId: r.EXCHANGE_ID,
-      reviewerId: r.REVIEWER_ID,
-      revieweeId: r.REVIEWEE_ID,
-      rating: Number(r.RATING),
-      comment: r.COMMENT_TEXT ?? null,
-      createdAt: r.CREATED_AT,
-      reviewer: { username: r.REV_USERNAME, avatarName: r.REV_AVATAR ?? null },
+      id: r.id,
+      exchangeId: r.exchange_id,
+      reviewerId: r.reviewer_id,
+      revieweeId: r.reviewee_id,
+      rating: Number(r.rating),
+      comment: r.comment_text ?? null,
+      createdAt: r.created_at,
+      reviewer: { username: r.rev_username, avatarName: r.rev_avatar ?? null },
     }));
   },
 
-  /**
-   * Hesabı kalıcı olarak sil. FK ON DELETE CASCADE sayesinde
-   * kullanıcıya bağlı tüm post/exchange/dm/review/favorite kayıtları
-   * Oracle tarafından otomatik silinir.
-   */
   async deleteAccount(id: string): Promise<boolean> {
-    const n = await execute(`DELETE FROM users WHERE id = :id`, { id });
+    const n = await execute(`DELETE FROM users WHERE id = $1`, [id]);
     return n > 0;
   },
 };
@@ -298,14 +291,14 @@ export const resources = {
     const id = cuid("res_");
     await execute(
       `INSERT INTO resources (id, title, type, description, department_id)
-       VALUES (:id, :title, :type, :description, :department_id)`,
-      {
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
         id,
-        title: data.title,
-        type: data.type,
-        description: data.description ?? null,
-        department_id: data.departmentId ?? null,
-      },
+        data.title,
+        data.type,
+        data.description ?? null,
+        data.departmentId ?? null,
+      ],
     );
     return (await resources.findById(id))!;
   },
@@ -314,8 +307,8 @@ export const resources = {
     return mapResource(
       await queryOne(
         `SELECT id, title, type, description, department_id
-         FROM resources WHERE id = :id`,
-        { id },
+         FROM resources WHERE id = $1`,
+        [id],
       ),
     );
   },
@@ -332,27 +325,60 @@ export interface PostListFilters {
   limit?: number;
 }
 
+const POST_SELECT = `
+  p.id, p.title, p.description, p.status, p.owner_id, p.offer_id, p.request_id,
+  p.created_at, p.updated_at,
+  u.id AS u_id, u.username AS u_username, u.avatar_name AS u_avatar,
+  u.email AS u_email, u.bio AS u_bio,
+  u.department_id AS u_dept, u.created_at AS u_created,
+  d.id AS d_id, d.name AS d_name, d.faculty AS d_faculty,
+  o.id AS o_id, o.title AS o_title, o.type AS o_type,
+  o.description AS o_desc, o.department_id AS o_dept,
+  r.id AS r_id, r.title AS r_title, r.type AS r_type,
+  r.description AS r_desc, r.department_id AS r_dept
+`;
+
+const POST_JOINS = `
+  FROM posts p
+  JOIN users u    ON u.id  = p.owner_id
+  LEFT JOIN departments d ON d.id = u.department_id
+  JOIN resources o ON o.id = p.offer_id
+  JOIN resources r ON r.id = p.request_id
+`;
+
+function favFlagExpr(paramIndex: number): string {
+  return `CASE WHEN $${paramIndex}::text IS NOT NULL AND EXISTS (
+    SELECT 1 FROM favorites f WHERE f.user_id = $${paramIndex} AND f.post_id = p.id
+  ) THEN 1 ELSE 0 END AS fav_flag`;
+}
+
 export const posts = {
   async list(
     me: { id: string } | null,
     filters: PostListFilters = {},
   ): Promise<PostDetailed[]> {
-    const conditions: string[] = ["p.status = 'ACTIVE'"];
-    const binds: Record<string, unknown> = {};
+    const conditions: string[] = [`p.status = 'ACTIVE'`];
+    const params: unknown[] = [];
+    let idx = 1;
+
+    // me ID ilk param
+    params.push(me?.id ?? null);
+    const meIdx = idx++;
+
     if (filters.q) {
+      params.push(`%${filters.q}%`);
       conditions.push(
-        `(LOWER(p.title) LIKE LOWER(:q) OR LOWER(p.description) LIKE LOWER(:q)
-          OR LOWER(o.title) LIKE LOWER(:q) OR LOWER(r.title) LIKE LOWER(:q))`,
+        `(p.title ILIKE $${idx} OR p.description ILIKE $${idx} OR o.title ILIKE $${idx} OR r.title ILIKE $${idx})`,
       );
-      binds.q = `%${filters.q}%`;
+      idx++;
     }
     if (filters.type) {
-      conditions.push("o.type = :type");
-      binds.type = filters.type;
+      params.push(filters.type);
+      conditions.push(`o.type = $${idx++}`);
     }
     if (filters.departmentId) {
-      conditions.push("u.department_id = :dept");
-      binds.dept = filters.departmentId;
+      params.push(filters.departmentId);
+      conditions.push(`u.department_id = $${idx++}`);
     }
 
     const orderBy =
@@ -361,33 +387,16 @@ export const posts = {
         : "p.created_at DESC";
 
     const limit = filters.limit ?? 60;
-    binds.lim = limit;
+    params.push(limit);
+    const limIdx = idx++;
 
-    const rows = await query(
-      `SELECT p.id, p.title, p.description, p.status, p.owner_id, p.offer_id, p.request_id,
-              p.created_at, p.updated_at,
-              u.id AS u_id, u.username AS u_username, u.avatar_name AS u_avatar,
-              u.email AS u_email, u.bio AS u_bio,
-              u.department_id AS u_dept, u.created_at AS u_created,
-              d.id AS d_id, d.name AS d_name, d.faculty AS d_faculty,
-              o.id AS o_id, o.title AS o_title, o.type AS o_type,
-              o.description AS o_desc, o.department_id AS o_dept,
-              r.id AS r_id, r.title AS r_title, r.type AS r_type,
-              r.description AS r_desc, r.department_id AS r_dept,
-              CASE WHEN :meId IS NOT NULL AND
-                EXISTS (SELECT 1 FROM favorites f WHERE f.user_id = :meId AND f.post_id = p.id)
-                THEN 1 ELSE 0 END AS fav_flag
-       FROM posts p
-       JOIN users u    ON u.id  = p.owner_id
-       LEFT JOIN departments d ON d.id = u.department_id
-       JOIN resources o ON o.id = p.offer_id
-       JOIN resources r ON r.id = p.request_id
-       WHERE ${conditions.join(" AND ")}
-       ORDER BY ${orderBy}
-       FETCH FIRST :lim ROWS ONLY`,
-      { ...binds, meId: me?.id ?? null },
-    );
+    const sql = `SELECT ${POST_SELECT}, ${favFlagExpr(meIdx)}
+                 ${POST_JOINS}
+                 WHERE ${conditions.join(" AND ")}
+                 ORDER BY ${orderBy}
+                 LIMIT $${limIdx}`;
 
+    const rows = await query(sql, params);
     return rows.map((p: any) => buildDetailedPost(p));
   },
 
@@ -396,26 +405,10 @@ export const posts = {
     me: { id: string } | null,
   ): Promise<PostDetailed | null> {
     const p: any = await queryOne(
-      `SELECT p.id, p.title, p.description, p.status, p.owner_id, p.offer_id, p.request_id,
-              p.created_at, p.updated_at,
-              u.id AS u_id, u.username AS u_username, u.avatar_name AS u_avatar,
-              u.email AS u_email, u.bio AS u_bio,
-              u.department_id AS u_dept, u.created_at AS u_created,
-              d.id AS d_id, d.name AS d_name, d.faculty AS d_faculty,
-              o.id AS o_id, o.title AS o_title, o.type AS o_type,
-              o.description AS o_desc, o.department_id AS o_dept,
-              r.id AS r_id, r.title AS r_title, r.type AS r_type,
-              r.description AS r_desc, r.department_id AS r_dept,
-              CASE WHEN :meId IS NOT NULL AND
-                EXISTS (SELECT 1 FROM favorites f WHERE f.user_id = :meId AND f.post_id = p.id)
-                THEN 1 ELSE 0 END AS fav_flag
-       FROM posts p
-       JOIN users u    ON u.id  = p.owner_id
-       LEFT JOIN departments d ON d.id = u.department_id
-       JOIN resources o ON o.id = p.offer_id
-       JOIN resources r ON r.id = p.request_id
-       WHERE p.id = :id`,
-      { id, meId: me?.id ?? null },
+      `SELECT ${POST_SELECT}, ${favFlagExpr(1)}
+       ${POST_JOINS}
+       WHERE p.id = $2`,
+      [me?.id ?? null, id],
     );
     if (!p) return null;
     return buildDetailedPost(p);
@@ -441,58 +434,58 @@ export const posts = {
     const id = cuid("post_");
     const offerId = cuid("res_");
     const requestId = cuid("res_");
-    await tx(async (conn) => {
+    await tx(async (client) => {
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO resources (id, title, type, description, department_id)
-         VALUES (:id, :title, :type, :description, :department_id)`,
-        {
-          id: offerId,
-          title: data.offer.title,
-          type: data.offer.type,
-          description: data.offer.description ?? null,
-          department_id: data.offer.departmentId ?? null,
-        },
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          offerId,
+          data.offer.title,
+          data.offer.type,
+          data.offer.description ?? null,
+          data.offer.departmentId ?? null,
+        ],
       );
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO resources (id, title, type, description, department_id)
-         VALUES (:id, :title, :type, :description, :department_id)`,
-        {
-          id: requestId,
-          title: data.request.title,
-          type: data.request.type,
-          description: data.request.description ?? null,
-          department_id: data.request.departmentId ?? null,
-        },
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          requestId,
+          data.request.title,
+          data.request.type,
+          data.request.description ?? null,
+          data.request.departmentId ?? null,
+        ],
       );
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO posts (id, title, description, status, owner_id, offer_id, request_id)
-         VALUES (:id, :title, :description, 'ACTIVE', :owner_id, :offer_id, :request_id)`,
-        {
+         VALUES ($1, $2, $3, 'ACTIVE', $4, $5, $6)`,
+        [
           id,
-          title: data.title,
-          description: data.description ?? null,
-          owner_id: data.ownerId,
-          offer_id: offerId,
-          request_id: requestId,
-        },
+          data.title,
+          data.description ?? null,
+          data.ownerId,
+          offerId,
+          requestId,
+        ],
       );
     });
     return mapPost(
       await queryOne(
         `SELECT id, title, description, status, owner_id, offer_id, request_id, created_at, updated_at
-         FROM posts WHERE id = :id`,
-        { id },
+         FROM posts WHERE id = $1`,
+        [id],
       ),
     )!;
   },
 
   async delete(id: string, ownerId: string): Promise<boolean> {
     const n = await execute(
-      `DELETE FROM posts WHERE id = :id AND owner_id = :owner_id`,
-      { id, owner_id: ownerId },
+      `DELETE FROM posts WHERE id = $1 AND owner_id = $2`,
+      [id, ownerId],
     );
     return n > 0;
   },
@@ -503,28 +496,12 @@ export const posts = {
     limit = 12,
   ): Promise<PostDetailed[]> {
     const rows = await query(
-      `SELECT p.id, p.title, p.description, p.status, p.owner_id, p.offer_id, p.request_id,
-              p.created_at, p.updated_at,
-              u.id AS u_id, u.username AS u_username, u.avatar_name AS u_avatar,
-              u.email AS u_email, u.bio AS u_bio,
-              u.department_id AS u_dept, u.created_at AS u_created,
-              d.id AS d_id, d.name AS d_name, d.faculty AS d_faculty,
-              o.id AS o_id, o.title AS o_title, o.type AS o_type,
-              o.description AS o_desc, o.department_id AS o_dept,
-              r.id AS r_id, r.title AS r_title, r.type AS r_type,
-              r.description AS r_desc, r.department_id AS r_dept,
-              CASE WHEN :meId IS NOT NULL AND
-                EXISTS (SELECT 1 FROM favorites f WHERE f.user_id = :meId AND f.post_id = p.id)
-                THEN 1 ELSE 0 END AS fav_flag
-       FROM posts p
-       JOIN users u    ON u.id  = p.owner_id
-       LEFT JOIN departments d ON d.id = u.department_id
-       JOIN resources o ON o.id = p.offer_id
-       JOIN resources r ON r.id = p.request_id
-       WHERE p.owner_id = :owner AND p.status = 'ACTIVE'
+      `SELECT ${POST_SELECT}, ${favFlagExpr(1)}
+       ${POST_JOINS}
+       WHERE p.owner_id = $2 AND p.status = 'ACTIVE'
        ORDER BY p.created_at DESC
-       FETCH FIRST :lim ROWS ONLY`,
-      { owner: ownerId, meId: me?.id ?? null, lim: limit },
+       LIMIT $3`,
+      [me?.id ?? null, ownerId, limit],
     );
     return rows.map((p: any) => buildDetailedPost(p));
   },
@@ -532,42 +509,42 @@ export const posts = {
 
 function buildDetailedPost(p: any): PostDetailed {
   return {
-    id: p.ID,
-    title: p.TITLE,
-    description: p.DESCRIPTION ?? null,
-    status: p.STATUS,
-    ownerId: p.OWNER_ID,
-    offerId: p.OFFER_ID,
-    requestId: p.REQUEST_ID,
-    createdAt: p.CREATED_AT,
-    updatedAt: p.UPDATED_AT,
+    id: p.id,
+    title: p.title,
+    description: p.description ?? null,
+    status: p.status,
+    ownerId: p.owner_id,
+    offerId: p.offer_id,
+    requestId: p.request_id,
+    createdAt: p.created_at,
+    updatedAt: p.updated_at,
     owner: {
-      id: p.U_ID,
-      username: p.U_USERNAME,
-      email: p.U_EMAIL,
-      avatarName: p.U_AVATAR ?? null,
-      bio: p.U_BIO ?? null,
-      departmentId: p.U_DEPT ?? null,
-      createdAt: p.U_CREATED,
-      department: p.D_ID
-        ? { id: p.D_ID, name: p.D_NAME, faculty: p.D_FACULTY }
+      id: p.u_id,
+      username: p.u_username,
+      email: p.u_email,
+      avatarName: p.u_avatar ?? null,
+      bio: p.u_bio ?? null,
+      departmentId: p.u_dept ?? null,
+      createdAt: p.u_created,
+      department: p.d_id
+        ? { id: p.d_id, name: p.d_name, faculty: p.d_faculty }
         : null,
     },
     offer: {
-      id: p.O_ID,
-      title: p.O_TITLE,
-      type: p.O_TYPE,
-      description: p.O_DESC ?? null,
-      departmentId: p.O_DEPT ?? null,
+      id: p.o_id,
+      title: p.o_title,
+      type: p.o_type,
+      description: p.o_desc ?? null,
+      departmentId: p.o_dept ?? null,
     },
     request: {
-      id: p.R_ID,
-      title: p.R_TITLE,
-      type: p.R_TYPE,
-      description: p.R_DESC ?? null,
-      departmentId: p.R_DEPT ?? null,
+      id: p.r_id,
+      title: p.r_title,
+      type: p.r_type,
+      description: p.r_desc ?? null,
+      departmentId: p.r_dept ?? null,
     },
-    favoritedByMe: Number(p.FAV_FLAG ?? 0) === 1,
+    favoritedByMe: Number(p.fav_flag ?? 0) === 1,
   };
 }
 
@@ -577,44 +554,32 @@ function buildDetailedPost(p: any): PostDetailed {
 export const favorites = {
   async add(userId: string, postId: string): Promise<void> {
     await execute(
-      `MERGE INTO favorites f
-       USING (SELECT :user_id AS user_id, :post_id AS post_id FROM dual) src
-         ON (f.user_id = src.user_id AND f.post_id = src.post_id)
-       WHEN NOT MATCHED THEN
-         INSERT (user_id, post_id) VALUES (src.user_id, src.post_id)`,
-      { user_id: userId, post_id: postId },
+      `INSERT INTO favorites (user_id, post_id)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id, post_id) DO NOTHING`,
+      [userId, postId],
     );
   },
 
   async remove(userId: string, postId: string): Promise<void> {
     await execute(
-      `DELETE FROM favorites WHERE user_id = :usrId AND post_id = :pid`,
-      { usrId: userId, pid: postId },
+      `DELETE FROM favorites WHERE user_id = $1 AND post_id = $2`,
+      [userId, postId],
     );
   },
 
   async listForUser(userId: string): Promise<PostDetailed[]> {
     const rows = await query(
-      `SELECT p.id, p.title, p.description, p.status, p.owner_id, p.offer_id, p.request_id,
-              p.created_at, p.updated_at,
-              u.id AS u_id, u.username AS u_username, u.avatar_name AS u_avatar,
-              u.email AS u_email, u.bio AS u_bio,
-              u.department_id AS u_dept, u.created_at AS u_created,
-              d.id AS d_id, d.name AS d_name, d.faculty AS d_faculty,
-              o.id AS o_id, o.title AS o_title, o.type AS o_type,
-              o.description AS o_desc, o.department_id AS o_dept,
-              r.id AS r_id, r.title AS r_title, r.type AS r_type,
-              r.description AS r_desc, r.department_id AS r_dept,
-              1 AS fav_flag
+      `SELECT ${POST_SELECT}, 1 AS fav_flag
        FROM favorites f
        JOIN posts p ON p.id = f.post_id
        JOIN users u ON u.id = p.owner_id
        LEFT JOIN departments d ON d.id = u.department_id
        JOIN resources o ON o.id = p.offer_id
        JOIN resources r ON r.id = p.request_id
-       WHERE f.user_id = :usrId
+       WHERE f.user_id = $1
        ORDER BY f.added_at DESC`,
-      { usrId: userId },
+      [userId],
     );
     return rows.map((p: any) => buildDetailedPost(p));
   },
@@ -628,8 +593,8 @@ export const exchanges = {
     return mapExchange(
       await queryOne(
         `SELECT id, post_id, requester_id, status, created_at, updated_at
-         FROM exchanges WHERE post_id = :pid AND requester_id = :rid`,
-        { pid: postId, rid: requesterId },
+         FROM exchanges WHERE post_id = $1 AND requester_id = $2`,
+        [postId, requesterId],
       ),
     );
   },
@@ -643,7 +608,6 @@ export const exchanges = {
         };
         requester: { id: string; username: string; avatarName: string | null };
         messages: ExchangeMessage[];
-        myReviewExists?: boolean;
       })
     | null
   > {
@@ -662,55 +626,51 @@ export const exchanges = {
        JOIN users req ON req.id = e.requester_id
        JOIN resources ofr ON ofr.id = p.offer_id
        JOIN resources rqr ON rqr.id = p.request_id
-       WHERE e.id = :id`,
-      { id },
+       WHERE e.id = $1`,
+      [id],
     );
     if (!p) return null;
-
     const msgs = await query(
       `SELECT exchange_id, message_no, sender_id, content, created_at
-       FROM exchange_messages
-       WHERE exchange_id = :id
-       ORDER BY message_no ASC`,
-      { id },
+       FROM exchange_messages WHERE exchange_id = $1 ORDER BY message_no ASC`,
+      [id],
     );
-
     return {
-      id: p.ID,
-      postId: p.POST_ID,
-      requesterId: p.REQUESTER_ID,
-      status: p.STATUS,
-      createdAt: p.CREATED_AT,
-      updatedAt: p.UPDATED_AT,
+      id: p.id,
+      postId: p.post_id,
+      requesterId: p.requester_id,
+      status: p.status,
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
       post: {
-        id: p.P_ID,
-        title: p.P_TITLE,
-        description: p.P_DESC ?? null,
-        status: p.P_STATUS,
-        ownerId: p.P_OWNER,
-        offerId: p.P_OFFER,
-        requestId: p.P_REQUEST,
-        createdAt: p.P_CREATED,
-        updatedAt: p.P_UPDATED,
+        id: p.p_id,
+        title: p.p_title,
+        description: p.p_desc ?? null,
+        status: p.p_status,
+        ownerId: p.p_owner,
+        offerId: p.p_offer,
+        requestId: p.p_request,
+        createdAt: p.p_created,
+        updatedAt: p.p_updated,
         owner: {
-          id: p.P_OWNER,
-          username: p.O_USERNAME,
-          avatarName: p.O_AVATAR ?? null,
+          id: p.p_owner,
+          username: p.o_username,
+          avatarName: p.o_avatar ?? null,
         },
-        offer: { title: p.OFR_TITLE, type: p.OFR_TYPE },
-        request: { title: p.RQR_TITLE, type: p.RQR_TYPE },
+        offer: { title: p.ofr_title, type: p.ofr_type },
+        request: { title: p.rqr_title, type: p.rqr_type },
       },
       requester: {
-        id: p.REQUESTER_ID,
-        username: p.REQ_USERNAME,
-        avatarName: p.REQ_AVATAR ?? null,
+        id: p.requester_id,
+        username: p.req_username,
+        avatarName: p.req_avatar ?? null,
       },
       messages: msgs.map((m: any) => ({
-        exchangeId: m.EXCHANGE_ID,
-        messageNo: Number(m.MESSAGE_NO),
-        senderId: m.SENDER_ID,
-        content: m.CONTENT,
-        createdAt: m.CREATED_AT,
+        exchangeId: m.exchange_id,
+        messageNo: Number(m.message_no),
+        senderId: m.sender_id,
+        content: m.content,
+        createdAt: m.created_at,
       })),
     };
   },
@@ -723,9 +683,9 @@ export const exchanges = {
        FROM exchanges e
        JOIN posts p ON p.id = e.post_id
        JOIN users req ON req.id = e.requester_id
-       WHERE p.owner_id = :usrId
+       WHERE p.owner_id = $1
        ORDER BY e.created_at DESC`,
-      { usrId: userId },
+      [userId],
     );
   },
 
@@ -737,9 +697,9 @@ export const exchanges = {
        FROM exchanges e
        JOIN posts p ON p.id = e.post_id
        JOIN users o ON o.id = p.owner_id
-       WHERE e.requester_id = :usrId
+       WHERE e.requester_id = $1
        ORDER BY e.created_at DESC`,
-      { usrId: userId },
+      [userId],
     );
   },
 
@@ -747,50 +707,50 @@ export const exchanges = {
     const id = cuid("exch_");
     await execute(
       `INSERT INTO exchanges (id, post_id, requester_id, status)
-       VALUES (:id, :post_id, :requester_id, 'PENDING')`,
-      { id, post_id: postId, requester_id: requesterId },
+       VALUES ($1, $2, $3, 'PENDING')`,
+      [id, postId, requesterId],
     );
     return mapExchange(
       await queryOne(
         `SELECT id, post_id, requester_id, status, created_at, updated_at
-         FROM exchanges WHERE id = :id`,
-        { id },
+         FROM exchanges WHERE id = $1`,
+        [id],
       ),
     )!;
   },
 
   async accept(id: string, ownerId: string): Promise<Exchange | null> {
-    return tx(async (conn) => {
+    return tx(async (client) => {
       const ex: any = await execOne(
-        conn,
+        client,
         `SELECT e.id, e.status, e.post_id FROM exchanges e
          JOIN posts p ON p.id = e.post_id
-         WHERE e.id = :id AND p.owner_id = :owner`,
-        { id, owner: ownerId },
+         WHERE e.id = $1 AND p.owner_id = $2`,
+        [id, ownerId],
       );
-      if (!ex || ex.STATUS !== "PENDING") return null;
+      if (!ex || ex.status !== "PENDING") return null;
       await execNoQuery(
-        conn,
-        `UPDATE exchanges SET status = 'ACCEPTED', updated_at = SYSTIMESTAMP WHERE id = :id`,
-        { id },
-      );
-      await execNoQuery(
-        conn,
-        `UPDATE posts SET status = 'RESERVED', updated_at = SYSTIMESTAMP WHERE id = :pid`,
-        { pid: ex.POST_ID },
+        client,
+        `UPDATE exchanges SET status = 'ACCEPTED', updated_at = NOW() WHERE id = $1`,
+        [id],
       );
       await execNoQuery(
-        conn,
-        `UPDATE exchanges SET status = 'REJECTED', updated_at = SYSTIMESTAMP
-         WHERE post_id = :pid AND status = 'PENDING' AND id <> :id`,
-        { pid: ex.POST_ID, id },
+        client,
+        `UPDATE posts SET status = 'RESERVED', updated_at = NOW() WHERE id = $1`,
+        [ex.post_id],
+      );
+      await execNoQuery(
+        client,
+        `UPDATE exchanges SET status = 'REJECTED', updated_at = NOW()
+         WHERE post_id = $1 AND status = 'PENDING' AND id <> $2`,
+        [ex.post_id, id],
       );
       return mapExchange(
         await execOne(
-          conn,
+          client,
           `SELECT id, post_id, requester_id, status, created_at, updated_at
-           FROM exchanges WHERE id = :id`,
-          { id },
+           FROM exchanges WHERE id = $1`,
+          [id],
         ),
       );
     });
@@ -798,36 +758,36 @@ export const exchanges = {
 
   async reject(id: string, ownerId: string): Promise<boolean> {
     const n = await execute(
-      `UPDATE exchanges SET status = 'REJECTED', updated_at = SYSTIMESTAMP
-       WHERE id = :id AND status = 'PENDING'
-         AND post_id IN (SELECT id FROM posts WHERE owner_id = :owner)`,
-      { id, owner: ownerId },
+      `UPDATE exchanges SET status = 'REJECTED', updated_at = NOW()
+       WHERE id = $1 AND status = 'PENDING'
+         AND post_id IN (SELECT id FROM posts WHERE owner_id = $2)`,
+      [id, ownerId],
     );
     return n > 0;
   },
 
   async cancel(id: string, userId: string): Promise<boolean> {
-    return tx(async (conn) => {
+    return tx(async (client) => {
       const ex: any = await execOne(
-        conn,
+        client,
         `SELECT e.id, e.status, e.post_id, e.requester_id, p.owner_id
          FROM exchanges e JOIN posts p ON p.id = e.post_id
-         WHERE e.id = :id`,
-        { id },
+         WHERE e.id = $1`,
+        [id],
       );
       if (!ex) return false;
-      if (ex.REQUESTER_ID !== userId && ex.OWNER_ID !== userId) return false;
-      if (!["PENDING", "ACCEPTED"].includes(ex.STATUS)) return false;
+      if (ex.requester_id !== userId && ex.owner_id !== userId) return false;
+      if (!["PENDING", "ACCEPTED"].includes(ex.status)) return false;
       await execNoQuery(
-        conn,
-        `UPDATE exchanges SET status='CANCELLED', updated_at=SYSTIMESTAMP WHERE id=:id`,
-        { id },
+        client,
+        `UPDATE exchanges SET status = 'CANCELLED', updated_at = NOW() WHERE id = $1`,
+        [id],
       );
-      if (ex.STATUS === "ACCEPTED") {
+      if (ex.status === "ACCEPTED") {
         await execNoQuery(
-          conn,
-          `UPDATE posts SET status='ACTIVE', updated_at=SYSTIMESTAMP WHERE id=:pid`,
-          { pid: ex.POST_ID },
+          client,
+          `UPDATE posts SET status = 'ACTIVE', updated_at = NOW() WHERE id = $1`,
+          [ex.post_id],
         );
       }
       return true;
@@ -835,26 +795,26 @@ export const exchanges = {
   },
 
   async complete(id: string, userId: string): Promise<boolean> {
-    return tx(async (conn) => {
+    return tx(async (client) => {
       const ex: any = await execOne(
-        conn,
+        client,
         `SELECT e.id, e.status, e.post_id, e.requester_id, p.owner_id
          FROM exchanges e JOIN posts p ON p.id = e.post_id
-         WHERE e.id = :id`,
-        { id },
+         WHERE e.id = $1`,
+        [id],
       );
       if (!ex) return false;
-      if (ex.REQUESTER_ID !== userId && ex.OWNER_ID !== userId) return false;
-      if (ex.STATUS !== "ACCEPTED") return false;
+      if (ex.requester_id !== userId && ex.owner_id !== userId) return false;
+      if (ex.status !== "ACCEPTED") return false;
       await execNoQuery(
-        conn,
-        `UPDATE exchanges SET status='COMPLETED', updated_at=SYSTIMESTAMP WHERE id=:id`,
-        { id },
+        client,
+        `UPDATE exchanges SET status = 'COMPLETED', updated_at = NOW() WHERE id = $1`,
+        [id],
       );
       await execNoQuery(
-        conn,
-        `UPDATE posts SET status='COMPLETED', updated_at=SYSTIMESTAMP WHERE id=:pid`,
-        { pid: ex.POST_ID },
+        client,
+        `UPDATE posts SET status = 'COMPLETED', updated_at = NOW() WHERE id = $1`,
+        [ex.post_id],
       );
       return true;
     });
@@ -863,15 +823,15 @@ export const exchanges = {
   async listMessages(exchangeId: string): Promise<ExchangeMessage[]> {
     const rows = await query(
       `SELECT exchange_id, message_no, sender_id, content, created_at
-       FROM exchange_messages WHERE exchange_id = :id ORDER BY message_no ASC`,
-      { id: exchangeId },
+       FROM exchange_messages WHERE exchange_id = $1 ORDER BY message_no ASC`,
+      [exchangeId],
     );
     return rows.map((m: any) => ({
-      exchangeId: m.EXCHANGE_ID,
-      messageNo: Number(m.MESSAGE_NO),
-      senderId: m.SENDER_ID,
-      content: m.CONTENT,
-      createdAt: m.CREATED_AT,
+      exchangeId: m.exchange_id,
+      messageNo: Number(m.message_no),
+      senderId: m.sender_id,
+      content: m.content,
+      createdAt: m.created_at,
     }));
   },
 
@@ -880,37 +840,37 @@ export const exchanges = {
     senderId: string,
     content: string,
   ): Promise<ExchangeMessage> {
-    return tx(async (conn) => {
+    return tx(async (client) => {
       const r: any = await execOne(
-        conn,
-        `SELECT NVL(MAX(message_no),0) + 1 AS next_no
-         FROM exchange_messages WHERE exchange_id = :id`,
-        { id: exchangeId },
+        client,
+        `SELECT COALESCE(MAX(message_no), 0) + 1 AS next_no
+         FROM exchange_messages WHERE exchange_id = $1`,
+        [exchangeId],
       );
-      const nextNo = Number(r?.NEXT_NO ?? 1);
+      const nextNo = Number(r?.next_no ?? 1);
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO exchange_messages (exchange_id, message_no, sender_id, content)
-         VALUES (:eid, :no, :sndr, :content)`,
-        { eid: exchangeId, no: nextNo, sndr: senderId, content },
+         VALUES ($1, $2, $3, $4)`,
+        [exchangeId, nextNo, senderId, content],
       );
       await execNoQuery(
-        conn,
-        `UPDATE exchanges SET updated_at = SYSTIMESTAMP WHERE id = :id`,
-        { id: exchangeId },
+        client,
+        `UPDATE exchanges SET updated_at = NOW() WHERE id = $1`,
+        [exchangeId],
       );
       const m: any = await execOne(
-        conn,
+        client,
         `SELECT exchange_id, message_no, sender_id, content, created_at
-         FROM exchange_messages WHERE exchange_id = :id AND message_no = :no`,
-        { id: exchangeId, no: nextNo },
+         FROM exchange_messages WHERE exchange_id = $1 AND message_no = $2`,
+        [exchangeId, nextNo],
       );
       return {
-        exchangeId: m.EXCHANGE_ID,
-        messageNo: Number(m.MESSAGE_NO),
-        senderId: m.SENDER_ID,
-        content: m.CONTENT,
-        createdAt: m.CREATED_AT,
+        exchangeId: m.exchange_id,
+        messageNo: Number(m.message_no),
+        senderId: m.sender_id,
+        content: m.content,
+        createdAt: m.created_at,
       };
     });
   },
@@ -921,50 +881,53 @@ export const exchanges = {
     rating: number,
     comment?: string | null,
   ): Promise<{ ok: boolean; error?: string }> {
-    return tx(async (conn) => {
+    return tx(async (client) => {
       const ex: any = await execOne(
-        conn,
+        client,
         `SELECT e.id, e.status, e.requester_id, p.owner_id
          FROM exchanges e JOIN posts p ON p.id = e.post_id
-         WHERE e.id = :id`,
-        { id: exchangeId },
+         WHERE e.id = $1`,
+        [exchangeId],
       );
       if (!ex) return { ok: false, error: "Bulunamadı" };
-      if (ex.STATUS !== "COMPLETED")
+      if (ex.status !== "COMPLETED")
         return { ok: false, error: "Tamamlanmamış" };
-      if (ex.REQUESTER_ID !== reviewerId && ex.OWNER_ID !== reviewerId)
+      if (ex.requester_id !== reviewerId && ex.owner_id !== reviewerId)
         return { ok: false, error: "Yetkisiz" };
       const revieweeId =
-        reviewerId === ex.REQUESTER_ID ? ex.OWNER_ID : ex.REQUESTER_ID;
+        reviewerId === ex.requester_id ? ex.owner_id : ex.requester_id;
 
       const existing: any = await execOne(
-        conn,
-        `SELECT id FROM reviews WHERE exchange_id = :eid AND reviewer_id = :rid`,
-        { eid: exchangeId, rid: reviewerId },
+        client,
+        `SELECT id FROM reviews WHERE exchange_id = $1 AND reviewer_id = $2`,
+        [exchangeId, reviewerId],
       );
       if (existing) return { ok: false, error: "Zaten değerlendirdin" };
 
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO reviews (id, exchange_id, reviewer_id, reviewee_id, rating, comment_text)
-         VALUES (:id, :eid, :rid, :vid, :rating, :comment)`,
-        {
-          id: cuid("rev_"),
-          eid: exchangeId,
-          rid: reviewerId,
-          vid: revieweeId,
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          cuid("rev_"),
+          exchangeId,
+          reviewerId,
+          revieweeId,
           rating,
-          comment: comment ?? null,
-        },
+          comment ?? null,
+        ],
       );
       return { ok: true };
     });
   },
 
-  async myReviewExists(exchangeId: string, reviewerId: string): Promise<boolean> {
+  async myReviewExists(
+    exchangeId: string,
+    reviewerId: string,
+  ): Promise<boolean> {
     const r = await queryOne(
-      `SELECT 1 AS x FROM reviews WHERE exchange_id = :eid AND reviewer_id = :rid`,
-      { eid: exchangeId, rid: reviewerId },
+      `SELECT 1 AS x FROM reviews WHERE exchange_id = $1 AND reviewer_id = $2`,
+      [exchangeId, reviewerId],
     );
     return !!r;
   },
@@ -980,69 +943,68 @@ export const dm = {
               ua.username AS a_username, ua.avatar_name AS a_avatar,
               ub.username AS b_username, ub.avatar_name AS b_avatar,
               (SELECT content FROM direct_messages
-                WHERE conversation_id = c.id
-                ORDER BY created_at DESC FETCH FIRST 1 ROWS ONLY) AS last_content,
+                 WHERE conversation_id = c.id
+                 ORDER BY created_at DESC LIMIT 1) AS last_content,
               (SELECT sender_id FROM direct_messages
-                WHERE conversation_id = c.id
-                ORDER BY created_at DESC FETCH FIRST 1 ROWS ONLY) AS last_sender
+                 WHERE conversation_id = c.id
+                 ORDER BY created_at DESC LIMIT 1) AS last_sender
        FROM conversations c
        JOIN users ua ON ua.id = c.user_a_id
        JOIN users ub ON ub.id = c.user_b_id
-       WHERE c.user_a_id = :usrId OR c.user_b_id = :usrId
+       WHERE c.user_a_id = $1 OR c.user_b_id = $1
        ORDER BY c.last_message_at DESC`,
-      { usrId: userId },
+      [userId],
     );
   },
 
   async getOrCreate(meId: string, otherId: string): Promise<Conversation> {
     const [a, b] = meId < otherId ? [meId, otherId] : [otherId, meId];
-    return tx(async (conn) => {
+    return tx(async (client) => {
       const existing: any = await execOne(
-        conn,
+        client,
         `SELECT id, user_a_id, user_b_id, last_message_at
-         FROM conversations WHERE user_a_id = :a AND user_b_id = :b`,
-        { a, b },
+         FROM conversations WHERE user_a_id = $1 AND user_b_id = $2`,
+        [a, b],
       );
       if (existing) {
         return {
-          id: existing.ID,
-          userAId: existing.USER_A_ID,
-          userBId: existing.USER_B_ID,
-          lastMessageAt: existing.LAST_MESSAGE_AT,
+          id: existing.id,
+          userAId: existing.user_a_id,
+          userBId: existing.user_b_id,
+          lastMessageAt: existing.last_message_at,
         };
       }
       const id = cuid("conv_");
       await execNoQuery(
-        conn,
-        `INSERT INTO conversations (id, user_a_id, user_b_id)
-         VALUES (:id, :a, :b)`,
-        { id, a, b },
+        client,
+        `INSERT INTO conversations (id, user_a_id, user_b_id) VALUES ($1, $2, $3)`,
+        [id, a, b],
       );
       const created: any = await execOne(
-        conn,
-        `SELECT id, user_a_id, user_b_id, last_message_at FROM conversations WHERE id = :id`,
-        { id },
+        client,
+        `SELECT id, user_a_id, user_b_id, last_message_at FROM conversations WHERE id = $1`,
+        [id],
       );
       return {
-        id: created.ID,
-        userAId: created.USER_A_ID,
-        userBId: created.USER_B_ID,
-        lastMessageAt: created.LAST_MESSAGE_AT,
+        id: created.id,
+        userAId: created.user_a_id,
+        userBId: created.user_b_id,
+        lastMessageAt: created.last_message_at,
       };
     });
   },
 
   async findById(id: string): Promise<Conversation | null> {
     const r: any = await queryOne(
-      `SELECT id, user_a_id, user_b_id, last_message_at FROM conversations WHERE id = :id`,
-      { id },
+      `SELECT id, user_a_id, user_b_id, last_message_at FROM conversations WHERE id = $1`,
+      [id],
     );
     if (!r) return null;
     return {
-      id: r.ID,
-      userAId: r.USER_A_ID,
-      userBId: r.USER_B_ID,
-      lastMessageAt: r.LAST_MESSAGE_AT,
+      id: r.id,
+      userAId: r.user_a_id,
+      userBId: r.user_b_id,
+      lastMessageAt: r.last_message_at,
     };
   },
 
@@ -1054,32 +1016,40 @@ export const dm = {
        FROM conversations c
        JOIN users ua ON ua.id = c.user_a_id
        JOIN users ub ON ub.id = c.user_b_id
-       WHERE c.id = :id`,
-      { id },
+       WHERE c.id = $1`,
+      [id],
     );
     if (!r) return null;
     return {
-      id: r.ID,
-      userAId: r.USER_A_ID,
-      userBId: r.USER_B_ID,
-      lastMessageAt: r.LAST_MESSAGE_AT,
-      userA: { id: r.USER_A_ID, username: r.A_USERNAME, avatarName: r.A_AVATAR ?? null },
-      userB: { id: r.USER_B_ID, username: r.B_USERNAME, avatarName: r.B_AVATAR ?? null },
+      id: r.id,
+      userAId: r.user_a_id,
+      userBId: r.user_b_id,
+      lastMessageAt: r.last_message_at,
+      userA: {
+        id: r.user_a_id,
+        username: r.a_username,
+        avatarName: r.a_avatar ?? null,
+      },
+      userB: {
+        id: r.user_b_id,
+        username: r.b_username,
+        avatarName: r.b_avatar ?? null,
+      },
     };
   },
 
   async listMessages(conversationId: string): Promise<DirectMessage[]> {
     const rows = await query(
       `SELECT id, conversation_id, sender_id, content, created_at
-       FROM direct_messages WHERE conversation_id = :id ORDER BY created_at ASC`,
-      { id: conversationId },
+       FROM direct_messages WHERE conversation_id = $1 ORDER BY created_at ASC`,
+      [conversationId],
     );
     return rows.map((m: any) => ({
-      id: m.ID,
-      conversationId: m.CONVERSATION_ID,
-      senderId: m.SENDER_ID,
-      content: m.CONTENT,
-      createdAt: m.CREATED_AT,
+      id: m.id,
+      conversationId: m.conversation_id,
+      senderId: m.sender_id,
+      content: m.content,
+      createdAt: m.created_at,
     }));
   },
 
@@ -1089,30 +1059,30 @@ export const dm = {
     content: string,
   ): Promise<DirectMessage> {
     const id = cuid("dm_");
-    await tx(async (conn) => {
+    await tx(async (client) => {
       await execNoQuery(
-        conn,
+        client,
         `INSERT INTO direct_messages (id, conversation_id, sender_id, content)
-         VALUES (:id, :cid, :sndr, :content)`,
-        { id, cid: conversationId, sndr: senderId, content },
+         VALUES ($1, $2, $3, $4)`,
+        [id, conversationId, senderId, content],
       );
       await execNoQuery(
-        conn,
-        `UPDATE conversations SET last_message_at = SYSTIMESTAMP WHERE id = :id`,
-        { id: conversationId },
+        client,
+        `UPDATE conversations SET last_message_at = NOW() WHERE id = $1`,
+        [conversationId],
       );
     });
     const r: any = await queryOne(
       `SELECT id, conversation_id, sender_id, content, created_at
-       FROM direct_messages WHERE id = :id`,
-      { id },
+       FROM direct_messages WHERE id = $1`,
+      [id],
     );
     return {
-      id: r.ID,
-      conversationId: r.CONVERSATION_ID,
-      senderId: r.SENDER_ID,
-      content: r.CONTENT,
-      createdAt: r.CREATED_AT,
+      id: r.id,
+      conversationId: r.conversation_id,
+      senderId: r.sender_id,
+      content: r.content,
+      createdAt: r.created_at,
     };
   },
 };
@@ -1131,22 +1101,22 @@ export const reports = {
   }): Promise<void> {
     await execute(
       `INSERT INTO reports (id, reporter_id, reported_user_id, target_type, target_id, reason, details)
-       VALUES (:id, :rep, :ru, :tt, :tid, :reason, :details)`,
-      {
-        id: cuid("rep_"),
-        rep: data.reporterId,
-        ru: data.reportedUserId ?? null,
-        tt: data.targetType,
-        tid: data.targetId,
-        reason: data.reason,
-        details: data.details ?? null,
-      },
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        cuid("rep_"),
+        data.reporterId,
+        data.reportedUserId ?? null,
+        data.targetType,
+        data.targetId,
+        data.reason,
+        data.details ?? null,
+      ],
     );
   },
 };
 
 /* ============================================================
-   STATS (landing page)
+   STATS
 ============================================================ */
 export interface DepartmentStat {
   departmentId: string;
@@ -1162,41 +1132,34 @@ export const stats = {
       `SELECT
          (SELECT COUNT(*) FROM posts WHERE status='ACTIVE') AS posts_count,
          (SELECT COUNT(*) FROM users) AS users_count,
-         (SELECT COUNT(*) FROM exchanges WHERE status='COMPLETED') AS completed_count
-       FROM dual`,
+         (SELECT COUNT(*) FROM exchanges WHERE status='COMPLETED') AS completed_count`,
     );
     return {
-      posts: Number(r?.POSTS_COUNT ?? 0),
-      users: Number(r?.USERS_COUNT ?? 0),
-      completed: Number(r?.COMPLETED_COUNT ?? 0),
+      posts: Number(r?.posts_count ?? 0),
+      users: Number(r?.users_count ?? 0),
+      completed: Number(r?.completed_count ?? 0),
     };
   },
 
-  /**
-   * Bölüme göre aktif ilan + kullanıcı dağılımı. GROUP BY her bölümün
-   * post ve user sayısını toplar; post sayısına göre azalan sıralanır.
-   */
   async byDepartment(limit = 8): Promise<DepartmentStat[]> {
     const rows = await query(
-      `SELECT d.id,
-              d.name,
-              d.faculty,
+      `SELECT d.id, d.name, d.faculty,
               COUNT(DISTINCT p.id) AS post_count,
               COUNT(DISTINCT u.id) AS user_count
-       FROM   departments d
+       FROM departments d
        LEFT JOIN users u ON u.department_id = d.id
        LEFT JOIN posts p ON p.owner_id = u.id AND p.status = 'ACTIVE'
        GROUP BY d.id, d.name, d.faculty
        ORDER BY post_count DESC, user_count DESC
-       FETCH FIRST :lim ROWS ONLY`,
-      { lim: limit },
+       LIMIT $1`,
+      [limit],
     );
     return rows.map((r: any) => ({
-      departmentId: r.ID,
-      departmentName: r.NAME,
-      faculty: r.FACULTY,
-      postCount: Number(r.POST_COUNT ?? 0),
-      userCount: Number(r.USER_COUNT ?? 0),
+      departmentId: r.id,
+      departmentName: r.name,
+      faculty: r.faculty,
+      postCount: Number(r.post_count ?? 0),
+      userCount: Number(r.user_count ?? 0),
     }));
   },
 };
