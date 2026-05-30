@@ -42,17 +42,28 @@ Next.js + **Oracle Database 23ai** + raw SQL ile uçtan uca uygular.
 
 ### 🚀 Tek tıkla başlat (Windows)
 
-Proje klasöründeki **`CampusSwap.bat`** dosyasına çift tıkla. Otomatik
-sırayla yapar:
+Masaüstündeki **CampusSwap** kısayoluna çift tıkla (veya proje
+klasöründeki `CampusSwap.bat`). Asıl iş `CampusSwap.ps1`'de — PowerShell
+script'i sırayla şunları yapar:
 
 1. Docker Desktop kapalıysa açar ve hazır olmasını bekler
 2. Oracle container'ı başlatır (ilk seferde image indirir + schema/seed yükler, ~5-10 dk)
 3. `npm install` (gerekirse) ve `.env` (yoksa) hazırlar
-4. Yeni terminalde `npm run dev` başlatır
-5. Tarayıcıyı `http://localhost:3000`'a açar
+4. **Aynı pencerede** `npm run dev` çalıştırır (ön planda, logları görürsün)
+5. 12 sn sonra tarayıcıda `http://localhost:3000` açar
 
-Durdurmak için **`CampusSwap-Stop.bat`** — dev sunucusunu kapatır,
-Oracle container'ını durdurur.
+**Kapatmak için:** pencerede **Ctrl+C** bas veya pencereyi kapat.
+PowerShell `try/finally` ile dev sunucusunu ve Oracle container'ı
+**otomatik durdurur** (`docker stop` + 3000 portunu temizleme).
+
+Masaüstündeki **CampusSwap-Stop** kısayolu da var (acil durdurma için).
+
+**İlk kullanımda masaüstüne kısayol oluşturmak için** proje klasöründe
+PowerShell aç ve şunu çalıştır:
+
+```powershell
+.\Install-Shortcuts.ps1
+```
 
 ### Manuel adımlar
 

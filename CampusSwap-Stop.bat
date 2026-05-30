@@ -1,30 +1,17 @@
 @echo off
-title CampusSwap Stop
-color 0C
-echo.
-echo  ===============================================
-echo    CampusSwap durduruluyor...
-echo  ===============================================
-echo.
+REM CampusSwap durdurucu - 3000 portunu temizler, Oracle container'i durdurur.
 
-REM 3000 portunu tutan node process'lerini kapat
-echo [1/2] Next.js dev sunucusu durduruluyor...
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3000 " ^| findstr "LISTENING"') do (
-    taskkill /PID %%a /F >nul 2>&1
-)
-echo       [OK]
-
-echo [2/2] Oracle container durduruluyor...
-docker stop campusswap-oracle >nul 2>&1
-if errorlevel 1 (
-    echo       UYARI: Container zaten kapali ya da Docker calismiyor.
-) else (
-    echo       [OK]
-)
-
-echo.
-echo  ===============================================
-echo    Tum servisler durduruldu.
-echo  ===============================================
-echo.
-timeout /t 3 /nobreak >nul
+cd /d "%~dp0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference='Continue';" ^
+  "Write-Host '';" ^
+  "Write-Host '  ==============================================';" ^
+  "Write-Host '    CampusSwap durduruluyor...';" ^
+  "Write-Host '  ==============================================';" ^
+  "try { Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } } catch {};" ^
+  "Get-Process -Name 'node' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue;" ^
+  "Write-Host '    [OK] Next.js dev sunucusu kapatildi.' -ForegroundColor Green;" ^
+  "docker stop campusswap-oracle 2>&1 | Out-Null;" ^
+  "Write-Host '    [OK] Oracle container durduruldu.' -ForegroundColor Green;" ^
+  "Write-Host '';" ^
+  "Start-Sleep -Seconds 2"
